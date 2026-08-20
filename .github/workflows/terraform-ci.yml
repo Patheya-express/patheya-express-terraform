@@ -28,7 +28,7 @@ jobs:
     outputs:
       modules: ${{ steps.list.outputs.modules }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: list
         run: |
           modules=$(find modules -maxdepth 1 -mindepth 1 -type d -printf '"modules/%f",' | sed 's/,$//')
