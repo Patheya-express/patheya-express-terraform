@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars (gitignored). Both values come from environments/management's outputs
+# after that environment's first apply — see docs/bootstrap-guide.md's deployment order.
+
+organization_id       = "<from environments/management output organization_id>"
+management_account_id = "<the management account's 12-digit ID>"

@@ -1,0 +1,7 @@
+organization_id = "<from environments/management output organization_id>"
+
+# Leave as empty lists on the FIRST apply of this environment (development/staging haven't been
+# applied yet, so their zones don't exist) — the delegation records simply won't be created; add
+# the real values and re-apply once development/staging exist. See docs/bootstrap-guide.md.
+development_zone_name_servers = []
+staging_zone_name_servers     = []

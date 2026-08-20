@@ -1,0 +1,38 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values before applying.
+
+management_account_email = "aws-root@patheyaexpress.com"
+
+member_accounts = {
+  security = {
+    email = "aws-security@patheyaexpress.com"
+    ou    = "security"
+  }
+  shared-services = {
+    email = "aws-shared-services@patheyaexpress.com"
+    ou    = "infrastructure"
+  }
+  development = {
+    email = "aws-development@patheyaexpress.com"
+    ou    = "workloads"
+  }
+  staging = {
+    email = "aws-staging@patheyaexpress.com"
+    ou    = "workloads"
+  }
+  production = {
+    email = "aws-production@patheyaexpress.com"
+    ou    = "workloads"
+  }
+  dr = {
+    email = "aws-dr@patheyaexpress.com"
+    ou    = "workloads"
+  }
+}
+
+budget_notification_emails = ["platform-engineering@patheyaexpress.com"]
+
+# Fill in AFTER environments/security's first apply — see docs/bootstrap-guide.md.
+security_account_id                     = "<fill in after first apply>"
+security_account_cloudtrail_bucket_name = "<fill in after environments/security's first apply>"
+
+enable_identity_center = false

@@ -1,0 +1,29 @@
+---
+# Requires: pip install pre-commit && pre-commit install (per-clone, one-time setup — see
+# docs/bootstrap-guide.md). Enforces platform-standards.md's Terraform Standards (Section 9)
+# locally, before a PR ever reaches CI.
+repos:
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.96.1
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+        args:
+          - --tf-init-args=-backend=false
+      - id: terraform_docs
+        args:
+          - --hook-config=--path-to-file=README.md
+          - --hook-config=--add-to-existing-file=true
+          - --hook-config=--create-file-if-not-exist=true
+      - id: terraform_tflint
+      - id: terraform_trivy
+        args:
+          - --args=--severity=HIGH,CRITICAL
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: detect-private-key

@@ -1,0 +1,113 @@
+name: terraform-ci
+
+# Section 4 (Terraform Pipeline): fmt, validate, tflint, tfsec, Checkov, module validation, plan
+# artifact generation, no automatic apply. Every job below calls
+# patheya-express-platform's reusable-terraform-plan.yml (cross-repo reusable workflow) so the
+# actual check logic lives in exactly one place, shared with nothing else in this repo.
+#
+# Module jobs (modules/*) validate with `init -backend=false` and never plan — a module has no
+# backend of its own. Stage jobs (environments/<tier>/<stage>) plan for real, against that
+# account's own Terraform CI OIDC role (modules/iam/terraform-role.tf) — six AWS accounts, six
+# distinct roles, hence six separate jobs rather than one dynamic matrix (GitHub Actions can't
+# look up `vars.*` by a computed key, only a literal name).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  discover-modules:
+    name: Discover modules
+    runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.list.outputs.modules }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          modules=$(find modules -maxdepth 1 -mindepth 1 -type d -printf '"modules/%f",' | sed 's/,$//')
+          echo "modules=[$modules]" >> "$GITHUB_OUTPUT"
+
+  validate-modules:
+    name: Validate module (${{ matrix.module }})
+    needs: discover-modules
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.discover-modules.outputs.modules) }}
+    uses: Patheya-express/patheya-express-platform/.github/workflows/reusable-terraform-plan.yml@main
+    with:
+      working-directory: ${{ matrix.module }}
+      needs-plan: false
+
+  plan-development:
+    name: Plan (development / ${{ matrix.stage }})
+    strategy:
+      fail-fast: false
+      matrix:
+        stage: ["", "cluster", "data", "platform"]
+    uses: Patheya-express/patheya-express-platform/.github/workflows/reusable-terraform-plan.yml@main
+    with:
+      working-directory: environments/development${{ matrix.stage != '' && format('/{0}', matrix.stage) || '' }}
+      needs-plan: true
+      aws-region: ap-south-1
+      role-to-assume: ${{ vars.TF_ROLE_ARN_DEVELOPMENT }}
+
+  plan-staging:
+    name: Plan (staging / ${{ matrix.stage }})
+    strategy:
+      fail-fast: false
+      matrix:
+        stage: ["", "cluster", "data", "platform"]
+    uses: Patheya-express/patheya-express-platform/.github/workflows/reusable-terraform-plan.yml@main
+    with:
+      working-directory: environments/staging${{ matrix.stage != '' && format('/{0}', matrix.stage) || '' }}
+      needs-plan: true
+      aws-region: ap-south-1
+      role-to-assume: ${{ vars.TF_ROLE_ARN_STAGING }}
+
+  plan-production:
+    name: Plan (production / ${{ matrix.stage }})
+    strategy:
+      fail-fast: false
+      matrix:
+        stage: ["", "cluster", "data", "platform"]
+    uses: Patheya-express/patheya-express-platform/.github/workflows/reusable-terraform-plan.yml@main
+    with:
+      working-directory: environments/production${{ matrix.stage != '' && format('/{0}', matrix.stage) || '' }}
+      needs-plan: true
+      aws-region: ap-south-1
+      role-to-assume: ${{ vars.TF_ROLE_ARN_PRODUCTION }}
+
+  plan-shared-services:
+    name: Plan (shared-services)
+    uses: Patheya-express/patheya-express-platform/.github/workflows/reusable-terraform-plan.yml@main
+    with:
+      working-directory: environments/shared-services
+      needs-plan: true
+      aws-region: ap-south-1
+      role-to-assume: ${{ vars.TF_ROLE_ARN_SHARED_SERVICES }}
+
+  plan-security:
+    name: Plan (security)
+    uses: Patheya-express/patheya-express-platform/.github/workflows/reusable-terraform-plan.yml@main
+    with:
+      working-directory: environments/security
+      needs-plan: true
+      aws-region: ap-south-1
+      role-to-assume: ${{ vars.TF_ROLE_ARN_SECURITY }}
+
+  plan-management:
+    name: Plan (management)
+    uses: Patheya-express/patheya-express-platform/.github/workflows/reusable-terraform-plan.yml@main
+    with:
+      working-directory: environments/management
+      needs-plan: true
+      aws-region: ap-south-1
+      role-to-assume: ${{ vars.TF_ROLE_ARN_MANAGEMENT }}

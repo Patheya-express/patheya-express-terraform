@@ -1,0 +1,3 @@
+apex_zone_id         = "<from environments/shared-services output apex_zone_id>"
+apex_certificate_arn = "<from environments/shared-services output apex_certificate_arn>"
+ecr_registry_host    = "<shared-services-account-id>.dkr.ecr.ap-south-1.amazonaws.com" # host portion of any entry in environments/shared-services output ecr_repository_urls
