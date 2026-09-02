@@ -29,8 +29,8 @@ module "kms" {
 
   keys = {
     cloudtrail-logs = {
-      description         = "Encrypts this account's VPC Flow Logs and Config snapshots"
-      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "delivery.logs.amazonaws.com"]
+      description         = "Encrypts this account's VPC Flow Logs, Config snapshots, and its security-findings SNS topic"
+      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "delivery.logs.amazonaws.com", "sns.amazonaws.com"]
     }
   }
 }
@@ -64,6 +64,8 @@ module "networking" {
 
   flow_log_kms_key_arn    = module.kms.key_arns["cloudtrail-logs"]
   flow_log_retention_days = 30
+
+  nlb_allowed_cidrs = var.nlb_allowed_cidrs
 }
 
 # No route53 module call here, deliberately: production is the ONE environment that uses the apex
@@ -87,4 +89,7 @@ module "security" {
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
+  kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
+
+  finding_notification_emails = var.security_finding_notification_emails
 }

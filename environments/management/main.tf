@@ -35,8 +35,8 @@ module "kms" {
 
   keys = {
     cloudtrail-logs = {
-      description         = "Encrypts the organization CloudTrail's CloudWatch Logs feed in this account"
-      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com"]
+      description         = "Encrypts the organization CloudTrail's CloudWatch Logs feed in this account, and this account's security-findings SNS topic"
+      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "sns.amazonaws.com"]
     }
   }
 }
@@ -49,8 +49,10 @@ module "security" {
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
+  kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
 
-  delegate_admin_account_id = var.security_account_id
+  delegate_admin_account_id   = var.security_account_id
+  finding_notification_emails = var.security_finding_notification_emails
 }
 
 # This account owns the trail resource (org trails can only be created here); the destination

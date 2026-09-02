@@ -22,8 +22,8 @@ module "kms" {
 
   keys = {
     cloudtrail-logs = {
-      description         = "Encrypts the organization CloudTrail log archive and this account's own Config snapshots"
-      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com"]
+      description         = "Encrypts the organization CloudTrail log archive, this account's own Config snapshots, and its security-findings SNS topic"
+      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "sns.amazonaws.com"]
       key_administrators  = [module.iam.terraform_role_arn]
     }
   }
@@ -58,7 +58,9 @@ module "security" {
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
+  kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
 
-  is_delegated_admin_account = true
-  organization_id            = var.organization_id
+  is_delegated_admin_account  = true
+  organization_id             = var.organization_id
+  finding_notification_emails = var.security_finding_notification_emails
 }

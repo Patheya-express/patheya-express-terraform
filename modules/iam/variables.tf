@@ -85,11 +85,32 @@ variable "app_release_allowed_branches" {
 }
 
 variable "backend_ecr_repository_arns" {
-  description = "From module.ecr.repository_arns[\"api-gateway\"] (this account) — scopes the backend push role to exactly the one ECR repository it publishes to."
+  description = <<-EOT
+    From module.ecr.repository_arns["api-gateway"] (this account) — scopes the backend push role
+    to exactly the one ECR repository it publishes to.
+
+    Defaults to an empty list, not required — this module is called once per AWS account
+    (management, security, shared-services, development, staging, production), but only
+    shared-services actually owns ECR repositories to push to. `github-actions-ci-roles.tf`
+    count-gates the backend/frontend ECR-push role, policy, and attachment on
+    `length(var.backend_ecr_repository_arns) > 0`, so every other account simply doesn't create
+    them. Phase 0 remediation: this variable previously had no default and was required, which
+    broke `terraform validate` in every account except shared-services (the only caller that
+    supplied it) — confirmed by running `terraform validate` across all six environments.
+  EOT
   type        = list(string)
+  default     = []
 }
 
 variable "frontend_ecr_repository_arns" {
-  description = "From module.ecr.repository_arns, filtered to the four frontend app repositories (customer-app, partner-app, delivery-app, admin-app) — scopes the frontend push role to exactly those, never api-gateway."
+  description = <<-EOT
+    From module.ecr.repository_arns, filtered to the four frontend app repositories (customer-app,
+    partner-app, delivery-app, admin-app) — scopes the frontend push role to exactly those, never
+    api-gateway.
+
+    Defaults to an empty list — see backend_ecr_repository_arns's description for why, and for the
+    count-gating this drives in github-actions-ci-roles.tf.
+  EOT
   type        = list(string)
+  default     = []
 }

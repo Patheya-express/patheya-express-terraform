@@ -22,8 +22,8 @@ module "kms" {
 
   keys = {
     cloudtrail-logs = {
-      description         = "Encrypts this account's VPC Flow Logs and Config snapshots"
-      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "delivery.logs.amazonaws.com"]
+      description         = "Encrypts this account's VPC Flow Logs, Config snapshots, and its security-findings SNS topic"
+      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "delivery.logs.amazonaws.com", "sns.amazonaws.com"]
     }
   }
 }
@@ -57,6 +57,8 @@ module "networking" {
 
   flow_log_kms_key_arn    = module.kms.key_arns["cloudtrail-logs"]
   flow_log_retention_days = 7 # matches development's shorter log retention (platform-standards.md Section 11)
+
+  nlb_allowed_cidrs = var.nlb_allowed_cidrs
 }
 
 module "route53" {
@@ -79,8 +81,11 @@ module "security" {
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
+  kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
   # is_delegated_admin_account and delegate_admin_account_id both left at their false/null
   # defaults — this account is enrolled automatically by the security account's org-wide
   # auto-enable (modules/security's guardduty.tf / security-hub.tf), it doesn't configure
   # delegation itself.
+
+  finding_notification_emails = var.security_finding_notification_emails
 }

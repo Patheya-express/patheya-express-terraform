@@ -150,3 +150,35 @@ variable "dr_backup_vault_arn" {
   EOT
   type        = string
 }
+
+variable "enable_vault_lock" {
+  description = <<-EOT
+    Enables AWS Backup Vault Lock on the primary (this region's) backup vault. Disabled by default
+    — see modules/backup-vault's identical variable for why this is a deliberate, per-environment
+    human decision rather than a default: once its cooling-off period passes, the lock cannot be
+    loosened or removed by anyone, including the account root user. Applying the same optional
+    capability to both the primary vault (here) and the DR-region copy (modules/backup-vault)
+    keeps them consistent — locking one while leaving the other unprotected would be a confusing,
+    partial fix to the same audit finding.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "vault_lock_changeable_for_days" {
+  description = "Cooling-off period (days) before the lock becomes permanent. AWS's minimum is 3. Only meaningful when enable_vault_lock = true."
+  type        = number
+  default     = 3
+}
+
+variable "vault_lock_min_retention_days" {
+  description = "Minimum retention Vault Lock enforces on this vault. Null (no minimum) until set deliberately. Only meaningful when enable_vault_lock = true."
+  type        = number
+  default     = null
+}
+
+variable "vault_lock_max_retention_days" {
+  description = "Maximum retention Vault Lock enforces on this vault. Null (no maximum) by default. Only meaningful when enable_vault_lock = true."
+  type        = number
+  default     = null
+}

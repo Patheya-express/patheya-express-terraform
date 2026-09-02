@@ -17,13 +17,19 @@ for.
   GuardDuty/Security Hub enabled without a manual per-account opt-in) and creates the
   organization-scoped Access Analyzer.
 
-## Explicitly deferred to Phase 6
+## Finding notifications
 
-Security Hub's full "central configuration" mode (a finding aggregator plus configuration
-policies applied org-wide) is enabled here only at the basic level — this task's own "DO NOT
-IMPLEMENT" list excludes the deeper security tooling (Kyverno, image signing verification) that a
-fuller Security Hub configuration would coordinate with; revisit alongside that Phase 6 work
-rather than half-configuring it now.
+`enable_finding_notifications` (default `true`) creates an SNS topic plus two EventBridge rules —
+one for GuardDuty findings at severity >= 4.0 (MEDIUM and above), one for Security Hub findings
+labeled HIGH/CRITICAL with workflow status NEW — routing both to that topic. This closes a gap the
+Kubernetes-layer tooling (Falco/Kyverno/Trivy, `modules/supply-chain-security`) didn't have: those
+already route through Alertmanager, but AWS-native findings had no notification path at all before
+this. `finding_notification_emails` (default empty) subscribes real addresses — this repository
+doesn't invent one; populate it via the calling environment's tfvars once a real address or
+distribution list exists, the same pattern `modules/alerting`'s `email_subscriptions` uses. A
+deeper integration (AWS Chatbot into Slack, a PagerDuty AWS integration) would need its own
+human-supplied credential and is left for that later, human-approved step — not implemented
+speculatively here.
 
 ## Usage
 
@@ -34,6 +40,7 @@ module "security" {
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
+  kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
 
   delegate_admin_account_id = module.organizations.member_account_ids["security"]
 }
@@ -46,6 +53,7 @@ module "security" {
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
+  kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
 
   is_delegated_admin_account = true
   organization_id             = data.terraform_remote_state.management.outputs.organization_id

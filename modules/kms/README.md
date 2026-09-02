@@ -5,11 +5,14 @@ One customer-managed KMS key (+ alias, automatic annual rotation per
 "one CMK per data class per environment, not one shared key across everything" per
 `cloud-architecture-blueprint.md` Section 11.
 
-## Phase 2 usage
+## Usage
 
-Only `cloudtrail-logs` and `ecr` are instantiated in this phase's environments — `aurora`,
-`redis`/`elasticache`, and `ebs` keys are added when Phase 3/4 actually provisions those services,
-not created idle ahead of need (`platform-standards.md` Section 1, principle 2).
+Called once per environment, per data class actually in use in that environment — no key is
+created idle ahead of a real consumer needing it (`platform-standards.md` Section 1, principle 2).
+`environments/*/main.tf` (the root/foundation layer) instantiates `cloudtrail-logs`, `ecr` (in
+`shared-services`), and `eks-secrets` (from `environments/*/cluster`); `environments/*/data`
+instantiates `aurora`, `redis`, and `secrets`; the DR-region provider alias instantiates
+`aurora-backup-dr`.
 
 ```hcl
 module "kms" {

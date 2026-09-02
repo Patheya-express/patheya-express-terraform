@@ -38,7 +38,7 @@ locals {
 
     configs = {
       cm = {
-        "admin.enabled"                      = "true" # local admin retained for initial bootstrap access — see docs/argocd-guide.md for the plan to disable it once SSO (Grafana's same deferred-SSO posture) is live
+        "admin.enabled"                      = "true" # local admin retained for initial bootstrap access — see README.md's "Access, RBAC, and TLS" section for the required sequencing before this is ever set to "false"
         "timeout.reconciliation"             = "180s"
         "application.resourceTrackingMethod" = "annotation"
 
@@ -62,7 +62,7 @@ locals {
         LUA
       }
       params = {
-        "server.insecure" = "true" # plain HTTP inside the cluster — no Ingress in this phase (same posture as Grafana: reach it via kubectl port-forward), TLS termination deferred until this is actually exposed externally
+        "server.insecure" = "true" # plain HTTP inside the cluster — safe ONLY as long as access stays kubectl port-forward-only (no Ingress exists for ArgoCD anywhere in this repository or the gitops repo). See README.md's "Access, RBAC, and TLS" section before adding one.
       }
       rbac = {
         "policy.default" = "role:readonly"

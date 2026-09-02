@@ -16,6 +16,16 @@ boundary instead of inventing one under deploy pressure. Contrast this with `mod
 deliberately does NOT pre-create Aurora/Redis keys — a KMS key is a real, distinctly-billed,
 independently-manageable resource, not a policy object with no cost implication either way.
 
+## NLB ingress (`nlb-sg`)
+
+`nlb_allowed_cidrs` (required, validated non-empty) is Cloudflare's current published IPv4 edge
+range — this module creates one ingress rule per entry, rather than a single `0.0.0.0/0` rule
+narrowed by a process outside Terraform. The security group's Terraform-declared state is the
+actual, complete restriction; there is no external mechanism this module's own `apply` could ever
+silently conflict with or revert. Fetch the live range list from
+`https://www.cloudflare.com/ips-v4/` when populating this — never hardcode or commit a copy, since
+it changes over time and a stale list is its own liability.
+
 ## Usage
 
 ```hcl
@@ -31,5 +41,7 @@ module "networking" {
   private_data_subnet_ids  = module.vpc.private_data_subnet_ids
 
   flow_log_kms_key_arn = module.kms.key_arns["cloudtrail-logs"] # or a dedicated "vpc-flow-logs" key, if flow-log volume warrants a separate key later
+
+  nlb_allowed_cidrs = var.nlb_allowed_cidrs # Cloudflare's current published IPv4 ranges — see above
 }
 ```

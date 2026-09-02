@@ -30,3 +30,18 @@ data "aws_iam_policy_document" "topic_policy" {
     resources = [aws_sns_topic.this.arn]
   }
 }
+
+# Phase 0 remediation: this topic previously had no subscription mechanism at all — every
+# CloudWatch alarm pointed at it (Aurora's, ElastiCache's) notified no one. No secret value is
+# involved in an email subscription (it's a destination address, not a credential), so — unlike
+# Alertmanager's Slack webhook/PagerDuty key, which genuinely do require a human-supplied secret
+# and are left as a documented configuration requirement — this is safe to implement directly.
+# Empty by default; each address AWS emails a confirmation link to before it starts receiving
+# anything.
+resource "aws_sns_topic_subscription" "email" {
+  for_each = toset(var.email_subscriptions)
+
+  topic_arn = aws_sns_topic.this.arn
+  protocol  = "email"
+  endpoint  = each.value
+}

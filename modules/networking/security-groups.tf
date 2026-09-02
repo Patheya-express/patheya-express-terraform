@@ -21,13 +21,20 @@ resource "aws_security_group" "nlb" {
   }
 }
 
+# Phase 0 remediation (cloud-architecture-blueprint.md Section 2's footnote, ADR-004): one rule
+# per Cloudflare CIDR block from var.nlb_allowed_cidrs, replacing the previous unconditional
+# 0.0.0.0/0 rule whose real narrowing depended on an external, non-Terraform-managed process. The
+# security group's Terraform-declared state is now the actual, complete restriction — not a
+# permissive baseline some other system is trusted to tighten after the fact.
 resource "aws_vpc_security_group_ingress_rule" "nlb_https" {
+  for_each = toset(var.nlb_allowed_cidrs)
+
   security_group_id = aws_security_group.nlb.id
-  description       = "HTTPS from Cloudflare's edge only in practice — CIDR list synced by a scheduled process outside this module (cloud-architecture-blueprint.md Section 2 footnote); 0.0.0.0/0 here is the Terraform-expressible baseline, narrowed operationally."
+  description       = "HTTPS from Cloudflare's published edge range ${each.value} (ADR-004 — Cloudflare is the sole public edge, this NLB its only origin)."
   ip_protocol       = "tcp"
   from_port         = 443
   to_port           = 443
-  cidr_ipv4         = "0.0.0.0/0"
+  cidr_ipv4         = each.value
 }
 
 resource "aws_vpc_security_group_egress_rule" "nlb_to_eks_nodes" {

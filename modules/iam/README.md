@@ -3,18 +3,18 @@
 Per-account identity foundation: GitHub Actions OIDC provider, the Terraform CI deploy role
 (scoped policy, not `AdministratorAccess`), and a permission boundary applied to it.
 
-## Explicitly out of scope for Phase 2
+## IRSA roles
 
 EKS IRSA roles (for the AWS Load Balancer Controller, ExternalDNS, cert-manager, External Secrets
-Operator) are **not** in this module — they need the EKS cluster's own OIDC provider, which doesn't
-exist until Phase 3. Those roles belong in a Phase 3/6 addition to this module or a dedicated
-`modules/irsa`, added when EKS itself is added — not stubbed out speculatively here
-(`docs/architecture/platform-standards.md` Section 1, principle 2).
+Operator, Karpenter) are **not** in this module — they need the EKS cluster's own OIDC provider,
+which this module has no dependency on. Those roles are created in `modules/eks-addons`, alongside
+each add-on's own Helm release, once `modules/eks` provisions the cluster (and its OIDC provider)
+those IRSA roles trust — see `modules/eks-addons/README.md`.
 
 ## Usage
 
 Called once per AWS account (management, security, shared-services, development, staging,
-production, dr) from that account's `environments/*/main.tf`:
+production, and — once that account exists — dr) from that account's `environments/*/main.tf`:
 
 ```hcl
 module "iam" {
@@ -28,6 +28,10 @@ module "iam" {
 }
 ```
 
+`backend_ecr_repository_arns`/`frontend_ecr_repository_arns` default to an empty list and only
+need to be supplied by the one account that owns the ECR repositories those roles push to
+(`environments/shared-services`) — see `github-actions-ci-roles.tf`.
+
 ## Security model
 
 - No IAM users, anywhere, ever (enforced by both this module's permission boundary and the
@@ -38,3 +42,13 @@ module "iam" {
 - The role's permission policy is scoped to the AWS services this repository's modules actually
   provision, not a blanket grant — see `terraform-role.tf`'s `InfrastructureProvisioning`
   statement for the exact service list.
+- IAM role/policy/instance-profile management — for both the Terraform CI role's own policy and
+  the permission boundary every Terraform-created role in this account gets — is scoped to this
+  account's naming convention (`${var.name_prefix}-*`), not account-wide. `iam:PassRole` in
+  particular is scoped the same way: this role can only pass roles this repository's own modules
+  create, never an arbitrary role in the account.
+- The permission boundary additionally denies creating or re-bounding any role that isn't given
+  this same boundary (the standard AWS-documented pattern for preventing a bounded role from
+  creating an unbounded one to escalate through), and explicitly denies the classic IAM
+  user/group-policy escalation vectors even though nothing in this account has IAM users or groups
+  to begin with.

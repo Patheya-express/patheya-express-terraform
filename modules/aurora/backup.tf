@@ -12,6 +12,17 @@ resource "aws_backup_vault" "primary" {
   tags = merge(var.tags, { Application = "aurora", Purpose = "backup-vault-primary" })
 }
 
+# Phase 0 remediation: opt-in, disabled by default — see enable_vault_lock's description.
+resource "aws_backup_vault_lock_configuration" "primary" {
+  count = var.enable_vault_lock ? 1 : 0
+
+  backup_vault_name = aws_backup_vault.primary.name
+
+  changeable_for_days = var.vault_lock_changeable_for_days
+  min_retention_days  = var.vault_lock_min_retention_days
+  max_retention_days  = var.vault_lock_max_retention_days
+}
+
 data "aws_iam_policy_document" "backup_assume" {
   statement {
     effect  = "Allow"

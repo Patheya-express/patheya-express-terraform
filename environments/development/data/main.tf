@@ -76,6 +76,8 @@ module "alerting" {
   name_prefix = module.shared.name_prefix
   kms_key_arn = module.kms.key_arns["aurora"]
   topic_name  = "alerts-database"
+
+  email_subscriptions = var.alert_email_subscriptions
 }
 
 module "secrets_manager" {

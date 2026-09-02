@@ -57,6 +57,51 @@ exactly the moment that gap became load-bearing, so it's fixed as part of this w
 repository's `k8s/base/kustomization.yaml` for the corrected `namespace: patheya-backend` and the
 now-removed `namespace.yaml` (Terraform is the sole owner of that object as of Phase 3).
 
+## Access, RBAC, and TLS — current state and what production requires first
+
+**Phase 0 remediation note**: the audit that prompted this section found `server.insecure = "true"`
+and `admin_rbac_group` unset in every environment, including production, and asked whether that's
+intentional. It is — for the reason below — but it was undocumented as a *boundary*, which is the
+actual gap this section closes. No `.tf` change accompanies this: fabricating a real
+`admin_rbac_group` value against an IAM Identity Center instance that may not even be enabled yet
+(`modules/organizations`' `enable_identity_center`, default `false`) would be a speculative,
+unverifiable change, not a fix — this module's existing `admin_rbac_group != null` gate already
+does the right thing once a real group exists (see `main.tf`'s `rbac_policy_lines` local).
+
+- **Access today**: `kubectl port-forward` only. No `Ingress` for ArgoCD exists anywhere in this
+  repository or (per `docs/argocd-guide.md`) the gitops repo's `infrastructure`/`applications`
+  layers — ArgoCD is simply not reachable except by someone with cluster `kubectl` access already
+  (itself gated by EKS Access Entries, `modules/eks/access-entries.tf`).
+- **Why `server.insecure = "true"` is acceptable *only* under that condition**: it means ArgoCD
+  serves plain HTTP inside the cluster. That's a real gap the moment ArgoCD becomes reachable any
+  other way (a NodePort, an Ingress, a `LoadBalancer` Service) — plain HTTP would then be exposed
+  beyond the cluster boundary, not just within it.
+- **Why RBAC is local-admin-only today**: `admin_rbac_group`'s null-safe gate means no group-based
+  `role:admin` mapping is fabricated against an Identity Center instance that may not exist. The
+  chart's built-in local `admin` account (`configs.cm."admin.enabled" = "true"`) is the only way
+  in — acceptable for a single-operator bootstrap phase reachable only via port-forward, not for a
+  team, and not once ArgoCD is reachable by anyone who isn't also a cluster operator.
+
+**Required before adding any Ingress for ArgoCD, in order** (this module already supports steps 2
+and 4 without a code change — they're variable values, not new resources):
+
+1. Confirm IAM Identity Center is actually enabled for this organization
+   (`modules/organizations`' `enable_identity_center = true`, applied from `environments/management`).
+2. Set `admin_rbac_group` to a real Identity Center group name for the platform-engineering team —
+   this alone adds group-based `role:admin` alongside (not instead of) the local admin account.
+3. Flip `configs.params."server.insecure"` to `"false"` and terminate TLS at whatever fronts
+   ArgoCD (this module's own `helm_release`, matching how the NGINX Ingress Controller and every
+   other addon in this repository terminates TLS — see `docs/ingress-guide.md`).
+4. Only then add the Ingress resource itself (in the gitops repo's `infrastructure` layer, per
+   this module's own ownership boundary — see the table above), and only then plan to eventually
+   set `configs.cm."admin.enabled" = "false"` once SSO login is confirmed working end-to-end (the
+   same order Grafana's identical deferred-SSO posture follows, `modules/observability`).
+
+Skipping straight to step 4 — adding an Ingress before 1–3 — is the one sequencing this module's
+current defaults were chosen specifically to make hard to do by accident (no Ingress exists in
+this repository to accidentally apply), not to make impossible if someone adds one deliberately
+without reading this.
+
 ## Inputs / Outputs
 
 See `variables.tf` / `outputs.tf`.

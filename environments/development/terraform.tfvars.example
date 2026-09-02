@@ -1,1 +1,11 @@
 # aws_region defaults to ap-south-1 — override only if this environment ever needs to differ.
+
+# Required — Cloudflare's current published IPv4 edge ranges. Fetch the live list from
+# https://www.cloudflare.com/ips-v4/ at apply time; do not copy values from this file or any other
+# committed source, since Cloudflare's ranges change and a stale copy silently under- or
+# over-restricts the NLB. See modules/networking's nlb_allowed_cidrs variable description.
+# nlb_allowed_cidrs = [
+#   "<cloudflare-ipv4-range-1>",
+#   "<cloudflare-ipv4-range-2>",
+#   # ... every range currently listed at https://www.cloudflare.com/ips-v4/
+# ]

@@ -35,7 +35,15 @@ data "aws_iam_policy_document" "backend_ecr_push_trust" {
   }
 }
 
+# Phase 0 remediation: count-gated on backend_ecr_repository_arns actually being non-empty. An
+# aws_iam_policy_document statement with `resources = []` (what var.backend_ecr_repository_arns
+# defaults to in every account except shared-services) is invalid at apply time — IAM rejects a
+# policy statement with zero resources — so this role, its policy, and its attachment simply don't
+# exist in an account that doesn't own the ECR repositories to push to, rather than existing with
+# a policy that can never actually match anything.
 resource "aws_iam_role" "backend_ecr_push" {
+  count = length(var.backend_ecr_repository_arns) > 0 ? 1 : 0
+
   name                 = "${var.name_prefix}-backend-ecr-push-role"
   assume_role_policy   = data.aws_iam_policy_document.backend_ecr_push_trust.json
   permissions_boundary = local.permission_boundary_arn
@@ -72,6 +80,8 @@ data "aws_iam_policy_document" "backend_ecr_push_permissions" {
 }
 
 resource "aws_iam_policy" "backend_ecr_push_permissions" {
+  count = length(var.backend_ecr_repository_arns) > 0 ? 1 : 0
+
   name        = "${var.name_prefix}-backend-ecr-push-policy"
   description = "GitHub Actions (patheya-express-platform, main branch only) — push access to the api-gateway ECR repository only."
   policy      = data.aws_iam_policy_document.backend_ecr_push_permissions.json
@@ -80,8 +90,10 @@ resource "aws_iam_policy" "backend_ecr_push_permissions" {
 }
 
 resource "aws_iam_role_policy_attachment" "backend_ecr_push" {
-  role       = aws_iam_role.backend_ecr_push.name
-  policy_arn = aws_iam_policy.backend_ecr_push_permissions.arn
+  count = length(var.backend_ecr_repository_arns) > 0 ? 1 : 0
+
+  role       = aws_iam_role.backend_ecr_push[0].name
+  policy_arn = aws_iam_policy.backend_ecr_push_permissions[0].arn
 }
 
 # --- Frontend --------------------------------------------------------------------------------
@@ -115,6 +127,8 @@ data "aws_iam_policy_document" "frontend_ecr_push_trust" {
 }
 
 resource "aws_iam_role" "frontend_ecr_push" {
+  count = length(var.frontend_ecr_repository_arns) > 0 ? 1 : 0
+
   name                 = "${var.name_prefix}-frontend-ecr-push-role"
   assume_role_policy   = data.aws_iam_policy_document.frontend_ecr_push_trust.json
   permissions_boundary = local.permission_boundary_arn
@@ -148,6 +162,8 @@ data "aws_iam_policy_document" "frontend_ecr_push_permissions" {
 }
 
 resource "aws_iam_policy" "frontend_ecr_push_permissions" {
+  count = length(var.frontend_ecr_repository_arns) > 0 ? 1 : 0
+
   name        = "${var.name_prefix}-frontend-ecr-push-policy"
   description = "GitHub Actions (frontend repo, main branch only) — push access to the four frontend app ECR repositories only, never api-gateway."
   policy      = data.aws_iam_policy_document.frontend_ecr_push_permissions.json
@@ -156,6 +172,8 @@ resource "aws_iam_policy" "frontend_ecr_push_permissions" {
 }
 
 resource "aws_iam_role_policy_attachment" "frontend_ecr_push" {
-  role       = aws_iam_role.frontend_ecr_push.name
-  policy_arn = aws_iam_policy.frontend_ecr_push_permissions.arn
+  count = length(var.frontend_ecr_repository_arns) > 0 ? 1 : 0
+
+  role       = aws_iam_role.frontend_ecr_push[0].name
+  policy_arn = aws_iam_policy.frontend_ecr_push_permissions[0].arn
 }

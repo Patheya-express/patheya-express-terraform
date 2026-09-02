@@ -30,6 +30,15 @@ module "aurora_backup_vault_dr" {
 }
 ```
 
+## Vault Lock
+
+`enable_vault_lock` (default `false`) turns on AWS Backup Vault Lock. Left off by default
+deliberately — once its cooling-off period (`vault_lock_changeable_for_days`, default 3) passes,
+the lock cannot be loosened or removed by anyone, including the account root user. Turning it on
+is a per-environment human decision, not something this module defaults into. `modules/aurora`'s
+primary vault exposes the identical set of variables, so both the primary and DR copies of a given
+environment's backups can be locked consistently rather than one protected and the other not.
+
 ## Inputs / Outputs
 
 See `variables.tf` / `outputs.tf`.

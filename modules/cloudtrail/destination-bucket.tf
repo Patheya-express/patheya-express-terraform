@@ -5,6 +5,11 @@ resource "aws_s3_bucket" "trail" {
 
   bucket = "${var.name_prefix}-cloudtrail-logs-${data.aws_caller_identity.current.account_id}"
 
+  # Phase 0 remediation: Object Lock can only be enabled at bucket creation — see
+  # enable_object_lock's description for why this is safe to turn on now and would not be safe to
+  # retrofit onto a bucket that's already been applied for real.
+  object_lock_enabled = var.enable_object_lock
+
   tags = merge(var.tags, {
     Application = "cloudtrail"
     Purpose     = "organization-trail-log-archive"
@@ -18,6 +23,24 @@ resource "aws_s3_bucket_versioning" "trail" {
   versioning_configuration {
     status = "Enabled"
   }
+}
+
+# Object Lock requires versioning enabled on the bucket (aws_s3_bucket_versioning above) before its
+# lock configuration can be applied — the explicit dependency keeps that ordering correct even
+# though object_lock_enabled on the bucket resource itself already implies versioning.
+resource "aws_s3_bucket_object_lock_configuration" "trail" {
+  count = var.create_destination_bucket && var.enable_object_lock ? 1 : 0
+
+  bucket = aws_s3_bucket.trail[0].id
+
+  rule {
+    default_retention {
+      mode = "GOVERNANCE"
+      days = var.object_lock_retention_days
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.trail]
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "trail" {

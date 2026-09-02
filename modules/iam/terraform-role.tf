@@ -47,9 +47,28 @@ resource "aws_iam_role" "terraform" {
 }
 
 # Scoped to exactly the AWS services this repository's modules provision (modules/vpc, networking,
-# route53, ecr, kms, cloudtrail, config, security, organizations, iam itself) — not
-# AdministratorAccess. Explicitly excludes IAM user/access-key creation (defense in depth on top of
-# the permission boundary above) and Organizations account deletion/leave.
+# route53, ecr, kms, cloudtrail, config, security, organizations, iam itself, eks, eks-addons,
+# aurora, elasticache, backup-vault, secrets-manager) — not AdministratorAccess. Explicitly
+# excludes IAM user/access-key creation (defense in depth on top of the permission boundary above)
+# and Organizations account deletion/leave.
+#
+# Phase 0 remediation, three fixes:
+#   1. This statement was missing eks:*/rds:*/elasticache:*/backup:*/secretsmanager:* entirely —
+#      a real gap, not a hardening choice: this same role is what CI plans and applies
+#      environments/<tier>/cluster (EKS) and environments/<tier>/data (Aurora, ElastiCache,
+#      Secrets Manager, AWS Backup) against, per .github/workflows/terraform-ci.yml's per-account
+#      job matrix (one role per account, reused across every stage). Without these, `apply` against
+#      those layers would fail with an authorization error the moment they were ever run for real.
+#   2. IAMRoleAndPolicyManagementForModulesOnly's actions were real (title matched intent), but its
+#      resources were `["*"]` — account-wide, not "for modules only." iam:PassRole with
+#      resources=["*"] in particular is a textbook privilege-escalation primitive (pass any role in
+#      the account to any service that accepts one). Scoped below to this account's own naming
+#      convention (${var.name_prefix}-*), which every role/policy/instance-profile this
+#      repository's modules create already follows.
+#   3. (Independent final review, second pass) events:* was also missing — modules/security's
+#      GuardDuty/Security Hub EventBridge routing and modules/eks-addons/karpenter.tf's
+#      spot-interruption rules both need it; "aws_cloudwatch_event_*" is a resource-naming
+#      holdover, the real IAM namespace is "events:", not "cloudwatch:".
 data "aws_iam_policy_document" "terraform_role_permissions" {
   statement {
     sid    = "InfrastructureProvisioning"
@@ -57,6 +76,11 @@ data "aws_iam_policy_document" "terraform_role_permissions" {
     actions = [
       "ec2:*",
       "elasticloadbalancing:*",
+      "eks:*",
+      "rds:*",
+      "elasticache:*",
+      "backup:*",
+      "secretsmanager:*",
       "route53:*",
       "route53domains:*",
       "acm:*",
@@ -69,6 +93,7 @@ data "aws_iam_policy_document" "terraform_role_permissions" {
       "access-analyzer:*",
       "budgets:*",
       "cloudwatch:*",
+      "events:*", # EventBridge — despite the "aws_cloudwatch_event_*" resource naming (a Terraform/AWS-provider legacy holdover from CloudWatch Events), the actual IAM action namespace is "events:", entirely separate from "cloudwatch:". Needed by modules/security/finding-notifications.tf's GuardDuty/Security Hub routing rules and by the pre-existing modules/eks-addons/karpenter.tf spot-interruption rules — both were unable to apply without this.
       "logs:*",
       "sns:*",
       "s3:*",
@@ -82,40 +107,95 @@ data "aws_iam_policy_document" "terraform_role_permissions" {
     resources = ["*"]
   }
 
+  # Scoped to this account's own naming convention, not account-wide — see modules/eks/main.tf's
+  # aws_iam_role.cluster ("${var.name_prefix}-eks-cluster-role"), modules/eks/node-groups.tf's
+  # aws_iam_role.node ("${var.name_prefix}-eks-node-role"), modules/aurora/backup.tf's
+  # aws_iam_role.backup ("${var.name_prefix}-aurora-backup-role"), and this same module's own
+  # terraform/ECR-push roles — every role this repository creates already follows this pattern.
   statement {
-    sid    = "IAMRoleAndPolicyManagementForModulesOnly"
+    sid    = "IAMRoleAndPolicyManagementScopedToOwnNamingConvention"
     effect = "Allow"
     actions = [
       "iam:CreateRole",
       "iam:DeleteRole",
       "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
       "iam:GetRole",
-      "iam:ListRole*",
-      "iam:CreatePolicy",
-      "iam:DeletePolicy",
-      "iam:CreatePolicyVersion",
-      "iam:DeletePolicyVersion",
-      "iam:GetPolicy*",
-      "iam:ListPolicy*",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
       "iam:AttachRolePolicy",
       "iam:DetachRolePolicy",
       "iam:PutRolePolicy",
       "iam:DeleteRolePolicy",
       "iam:GetRolePolicy",
-      "iam:ListRolePolicies",
-      "iam:ListAttachedRolePolicies",
       "iam:TagRole",
-      "iam:TagPolicy",
       "iam:UntagRole",
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:PassRole",
+    ]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.name_prefix}-*",
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:instance-profile/${var.name_prefix}-*",
+    ]
+  }
+
+  statement {
+    sid    = "IAMPolicyManagementScopedToOwnNamingConvention"
+    effect = "Allow"
+    actions = [
+      "iam:CreatePolicy",
+      "iam:DeletePolicy",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicyVersion",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:ListPolicyVersions",
+      "iam:TagPolicy",
       "iam:UntagPolicy",
+    ]
+    resources = ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${var.name_prefix}-*"]
+  }
+
+  # OIDC provider (one per account, named by URL) and service-linked roles (AWS-named, e.g.
+  # AWSServiceRoleForElastiCache) don't fit the naming-convention pattern above — scoped by action
+  # set instead; CreateServiceLinkedRole further restricted to only the services this repository's
+  # modules actually provision.
+  statement {
+    sid    = "IAMOIDCProviderManagement"
+    effect = "Allow"
+    actions = [
       "iam:CreateOpenIDConnectProvider",
       "iam:DeleteOpenIDConnectProvider",
       "iam:GetOpenIDConnectProvider",
       "iam:UpdateOpenIDConnectProviderThumbprint",
       "iam:TagOpenIDConnectProvider",
-      "iam:PassRole",
+      "iam:ListOpenIDConnectProviders",
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid       = "IAMServiceLinkedRoleCreationForOwnedServicesOnly"
+    effect    = "Allow"
+    actions   = ["iam:CreateServiceLinkedRole"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:AWSServiceName"
+      values = [
+        "eks.amazonaws.com",
+        "eks-nodegroup.amazonaws.com",
+        "elasticache.amazonaws.com",
+        "rds.amazonaws.com",
+        "backup.amazonaws.com",
+        "spot.amazonaws.com",
+      ]
+    }
   }
 
   # Explicit deny, redundant with the permission boundary but stated in-policy too — the two

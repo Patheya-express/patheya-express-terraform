@@ -44,3 +44,30 @@ variable "log_retention_days" {
   type        = number
   default     = 90
 }
+
+variable "enable_object_lock" {
+  description = <<-EOT
+    Enables S3 Object Lock (GOVERNANCE mode) on the destination bucket, when
+    create_destination_bucket = true. Object Lock can only be enabled AT BUCKET CREATION —
+    AWS provides no supported way to turn it on for an existing bucket after the fact (a support
+    request is the only path, and it isn't guaranteed). This module's bucket has never been
+    applied to a real AWS account as of this variable's introduction (Phase 0, pre-provisioning),
+    so enabling it now costs nothing and closes the finding cleanly; flip this to false only if
+    this module's bucket has since been applied for real without Object Lock and this would
+    otherwise force a destroy/recreate of the entire log archive.
+
+    GOVERNANCE mode (not COMPLIANCE): a locked object still can't be deleted or overwritten before
+    its retention period expires, but a principal with s3:BypassGovernanceRetention can override it
+    if genuinely necessary — COMPLIANCE mode's total immutability (unoverridable even by the
+    account root user) is a stronger, one-way door this repository leaves for an explicit human
+    decision (see object_lock_retention_days's description) rather than defaulting into.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "object_lock_retention_days" {
+  description = "Object Lock GOVERNANCE-mode retention period, in days, for every object written to the destination bucket. Defaults to 400 — safely past the 365-day point main.tf's lifecycle rule transitions objects to Glacier, so a still-locked object survives that transition rather than becoming unlocked right as it moves to cold storage. Only meaningful when enable_object_lock = true."
+  type        = number
+  default     = 400
+}

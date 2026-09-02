@@ -4,8 +4,11 @@ An organization-wide, multi-region CloudTrail trail with log file validation, sp
 accounts by design (separation of duties):
 
 - **`environments/security`** calls this module with `create_destination_bucket = true,
-  create_trail = false` — owns the S3 log archive (versioned, KMS-encrypted, lifecycle-transitioned
-  to Glacier after a year, bucket policy scoped to exactly the management account's trail ARN).
+  create_trail = false` — owns the S3 log archive (versioned, KMS-encrypted, Object Lock in
+  GOVERNANCE mode for `object_lock_retention_days` (default 400), lifecycle-transitioned to
+  Glacier after a year, bucket policy scoped to exactly the management account's trail ARN). Object
+  Lock can only be enabled at bucket creation — see `enable_object_lock`'s description before ever
+  setting it `false` on a bucket that's already been applied for real.
 - **`environments/management`** calls it with `create_trail = true, create_destination_bucket =
   false, existing_bucket_name = <security account's bucket, via terraform_remote_state>` — owns the
   trail resource itself (org trails can only be created by the management account) and a
