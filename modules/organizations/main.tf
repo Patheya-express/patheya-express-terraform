@@ -2,20 +2,31 @@
 # management account's own existence (its root email, initial billing setup) is an unavoidable
 # manual prerequisite (see README.md); everything from this resource down is IaC.
 resource "aws_organizations_organization" "this" {
+  # Phase 0.5 remediation (Organizations trusted-service-access review, verified against live
+  # AWS discovery): every principal here is required by a resource that actually exists in this
+  # repository — see the citations below. tagpolicies.tag.amazonaws.com was removed: this
+  # repository defines zero aws_organizations_policy resources of type TAG_POLICY anywhere, so
+  # that principal (and the TAG_POLICY entry in enabled_policy_types, below) enabled a capability
+  # with no consumer — the opposite of this codebase's own stated "not created idle ahead of
+  # need" principle. access-analyzer.amazonaws.com was added: modules/security's
+  # aws_accessanalyzer_analyzer.organization (type = "ORGANIZATION") requires the calling account
+  # to be a registered delegated administrator, which in turn requires this service to already be
+  # trusted — this principal was previously missing entirely.
   aws_service_access_principals = [
-    "cloudtrail.amazonaws.com",
-    "config.amazonaws.com",
-    "guardduty.amazonaws.com",
-    "securityhub.amazonaws.com",
-    "sso.amazonaws.com",
-    "tagpolicies.tag.amazonaws.com",
+    "cloudtrail.amazonaws.com",      # modules/cloudtrail's is_organization_trail = true (management account only)
+    "config.amazonaws.com",          # modules/config's organization aggregator + its new delegated-admin registration (modules/config/delegation.tf)
+    "guardduty.amazonaws.com",       # modules/security's aws_guardduty_organization_admin_account
+    "securityhub.amazonaws.com",     # modules/security's aws_securityhub_organization_admin_account
+    "sso.amazonaws.com",             # modules/organizations/identity-center.tf — already the sole principal enabled in the live organization
+    "access-analyzer.amazonaws.com", # modules/security's aws_accessanalyzer_analyzer.organization + its new delegated-admin registration
   ]
 
-  feature_set = "ALL" # required for SCPs and tag policies — CONSOLIDATED_BILLING alone can't enforce either
+  feature_set = "ALL" # required for SCPs — CONSOLIDATED_BILLING alone can't enforce them; matches the live organization's FeatureSet exactly
 
   enabled_policy_types = [
     "SERVICE_CONTROL_POLICY",
-    "TAG_POLICY",
+    # TAG_POLICY deliberately not enabled — no aws_organizations_policy of that type exists
+    # anywhere in this repository; matches the live organization's current state exactly.
   ]
 }
 

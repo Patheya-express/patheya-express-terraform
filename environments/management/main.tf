@@ -75,4 +75,9 @@ module "config" {
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
   kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
+
+  # Registers the security account as Config's delegated administrator — only the management
+  # account can perform this — unblocking environments/security's organization aggregator.
+  # See modules/config/delegation.tf.
+  delegate_admin_account_id = var.security_account_id
 }

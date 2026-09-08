@@ -54,7 +54,7 @@ resource "aws_iam_role_policy" "trail_to_cloudwatch_delivery" {
 }
 
 resource "aws_cloudtrail" "organization" {
-  count = var.create_trail ? 1 : 0
+  count = var.create_trail && var.existing_bucket_name != null ? 1 : 0
 
   name                       = "${var.name_prefix}-organization-trail"
   s3_bucket_name             = var.existing_bucket_name

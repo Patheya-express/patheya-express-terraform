@@ -37,18 +37,37 @@ terraform plan
 terraform apply
 ```
 
-This creates the AWS Organization, the three OUs, and all six member accounts (`security`,
-`shared-services`, `development`, `staging`, `production`, `dr`). Note the `member_account_ids`
-output — you'll need each account's ID in every following step.
+This creates the AWS Organization, the three OUs, and the five member accounts this phase actually
+provisions (`security`, `shared-services`, `development`, `staging`, `production`). **`dr` is
+deferred and must not appear in `member_accounts` for this pass** — it's built alongside Phase
+3/4's EKS/data-layer work, not ahead of having anything to protect (see the root README's Scope
+section). Note the `member_account_ids` output — you'll need each account's ID in every following
+step.
 
-**This step does NOT yet fully succeed on the first run for the `security` module's
-`delegate_admin_account_id` and the `cloudtrail` module's `existing_bucket_name`** — those
-reference the security account's own resources, which don't exist until Step 4. On this first
-apply, leave `security_account_id` and `security_account_cloudtrail_bucket_name` as placeholder
-values in `terraform.tfvars`; the `aws_guardduty_organization_admin_account` /
-`aws_securityhub_organization_admin_account` / `aws_cloudtrail` resources will fail to apply. That's
-expected — everything else in this environment (the organization, the accounts, IAM, KMS, Config)
-applies successfully. Re-run `terraform apply` here after Step 4 with the real values.
+**This is the first of a four-stage sequence, not a single pass**, because the `security` module's
+`delegate_admin_account_id`, the `config` module's `delegate_admin_account_id`, and the
+`cloudtrail` module's `existing_bucket_name` all reference the security account's own identity or
+resources, which don't exist yet:
+
+1. **Management Pass 1** (this step): set `security_account_id = null` and
+   `security_account_cloudtrail_bucket_name = null` in `terraform.tfvars`. Both are `!= null`-gated
+   (or, for CloudTrail's organization trail, gated on `existing_bucket_name != null` alongside
+   `create_trail`), so the `aws_guardduty_organization_admin_account` /
+   `aws_securityhub_organization_admin_account` / `aws_organizations_delegated_administrator`
+   (Config, and — inside the `security` module — Access Analyzer) / `aws_cloudtrail` resources are
+   cleanly **omitted from the plan**, not planned-and-expected-to-fail. Everything else in this
+   environment (the organization, the accounts, IAM, KMS, the rest of Config) applies normally.
+2. **Security Pass 1** (Step 4, below): creates the security account's own infrastructure,
+   including the CloudTrail destination bucket — the one resource in that pass with no dependency
+   on management having delegated anything yet.
+3. **Management Pass 2**: re-apply this same environment with the real `security_account_id` (from
+   Pass 1's `member_account_ids` output) and the real `security_account_cloudtrail_bucket_name`
+   (from Security Pass 1's `cloudtrail_bucket_name` output) — now non-null, so all five previously
+   -omitted resources are created for real.
+4. **Security Pass 2**: re-apply `environments/security` — its organization aggregator, org-wide
+   Access Analyzer, GuardDuty org-configuration, and Security Hub CENTRAL config were not creatable
+   during Security Pass 1 (they all depend on Management Pass 2's delegated-administrator
+   registrations succeeding first) and only become applyable now.
 
 ## 3. Bootstrap every member account's state backend (manual, local, once per account)
 

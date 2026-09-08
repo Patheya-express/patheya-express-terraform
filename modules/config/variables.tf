@@ -23,6 +23,12 @@ variable "organization_id" {
   default     = null
 }
 
+variable "delegate_admin_account_id" {
+  description = "Set only in environments/management — the security account's ID, registered as the AWS Config delegated administrator so environments/security's organization aggregator (create_aggregator = true, called from a non-management account) is permitted to create an organization_aggregation_source. Left null everywhere else (delegation is a one-time, management-account-only action) — see modules/config/delegation.tf. Null disables registration."
+  type        = string
+  default     = null
+}
+
 variable "mandatory_tag_keys" {
   description = "The fourteen mandatory tag keys from platform-standards.md Section 5 — enforced here via AWS Config's required-tags managed rule, the concrete mechanism behind that document's \"Reject any resource missing mandatory tags\" requirement (this task's Section 11)."
   type        = list(string)

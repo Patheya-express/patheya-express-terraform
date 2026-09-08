@@ -7,7 +7,7 @@ output "bucket_arn" {
 }
 
 output "trail_arn" {
-  value = var.create_trail ? aws_cloudtrail.organization[0].arn : null
+  value = var.create_trail && var.existing_bucket_name != null ? aws_cloudtrail.organization[0].arn : null
 }
 
 output "log_group_name" {
