@@ -35,6 +35,22 @@ variable "engine_version" {
   default = "7.1"
 }
 
+variable "cluster_mode_enabled" {
+  description = <<-EOT
+    false (default) produces a cluster-mode-DISABLED replication group (number_cache_clusters =
+    1 + replicas_per_shard) — the only shape the application's plain ioredis client (no
+    Redis.Cluster, no sentinel — confirmed against apps/api-gateway/src/infrastructure/redis) can
+    correctly speak to. true preserves this module's original cluster-mode-ENABLED shape
+    (num_node_groups/replicas_per_node_group) for a future caller with an actual cluster-aware
+    client; nothing in this repository has ever set this to true, and no environment has ever
+    applied this module (confirmed: zero `module "elasticache"` callers exist anywhere in
+    environments/), so changing the default from the module's original hardcoded "yes" carries no
+    migration, replacement, or live-state risk today.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "node_type" {
   description = "cache.r6g.large in production per cloud-architecture-blueprint.md Section 6's table; a smaller class is appropriate for development/staging."
   type        = string

@@ -18,6 +18,11 @@ module "organizations" {
 
   enable_identity_center    = var.enable_identity_center
   identity_center_group_ids = var.identity_center_group_ids
+
+  # Phase 2 (temporary DEV+QA on ECS Fargate in the Security account) — false by default, so this
+  # existing management plan is completely unaffected unless explicitly turned on. See
+  # modules/organizations/identity-center.tf's DevQAWorkloadOperator resources.
+  enable_devqa_temp_operator_permission_set = var.enable_devqa_temp_operator_permission_set
 }
 
 module "iam" {

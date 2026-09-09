@@ -171,3 +171,112 @@ resource "aws_ssoadmin_account_assignment" "developer" {
   target_id          = each.value
   target_type        = "AWS_ACCOUNT"
 }
+
+# --- DevQAWorkloadOperator (Phase 2, temporary DEV+QA) ------------------------------------------
+# A fifth, deliberately narrow permission set — NOT an extension of Developer's assignment model
+# above (which is, and remains, workloads-accounts-only) and NOT an SCP (an SCP would apply
+# account-wide and cannot distinguish "the DevQA operator" from the security team's own
+# legitimate GuardDuty/SecurityHub/Config/CloudTrail/Access-Analyzer administration happening in
+# the same account). This permission set exists solely because environments/development-temp's
+# compute has been placed in the Security account as an approved, explicitly-temporary compromise
+# (Phase 1 §3) — it must never be assigned anywhere else, and must never be able to touch this
+# account's actual security-tooling administration.
+#
+# Disabled by default (var.enable_devqa_temp_operator_permission_set = false) — a plain
+# terraform apply of this module, with no new variables set, creates nothing here, exactly like
+# every other resource in this file gated behind var.enable_identity_center.
+
+resource "aws_ssoadmin_permission_set" "devqa_workload_operator" {
+  count = var.enable_identity_center && var.enable_devqa_temp_operator_permission_set ? 1 : 0
+
+  name             = "DevQAWorkloadOperator"
+  description      = "Operates the temporary DEV+QA ECS/RDS/ElastiCache/ALB workload in the Security account only — explicitly denied any CloudTrail/GuardDuty/SecurityHub/Config/Access-Analyzer/IAM/Organizations administration."
+  instance_arn     = local.sso_instance_arn
+  session_duration = "PT8H"
+  tags             = merge(var.tags, { Application = "organizations", Purpose = "sso-devqa-workload-operator" })
+}
+
+data "aws_partition" "current" {}
+data "aws_region" "current" {}
+
+data "aws_iam_policy_document" "devqa_workload_operator" {
+  count = var.enable_identity_center && var.enable_devqa_temp_operator_permission_set ? 1 : 0
+
+  # Narrow, workload-oriented allow-list — only the services environments/development-temp's own
+  # modules (ecs, alb, rds, elasticache, ecr) actually provision. Not PowerUserAccess: this
+  # permission set exists in an account it should have as little standing reach in as possible.
+  statement {
+    sid    = "AllowDevQAWorkloadServices"
+    effect = "Allow"
+    actions = [
+      "ecs:*",
+      "elasticloadbalancing:*",
+      "rds:*",
+      "elasticache:*",
+      "logs:*",
+      "cloudwatch:*",
+      "ecr:*",
+    ]
+    resources = ["*"]
+  }
+
+  # Secrets Manager access resource-scoped to this workload's own path prefix only — never a
+  # blanket secretsmanager:* on "*", since the Security account may hold other, unrelated secrets
+  # (e.g. environments/security's own, once applied).
+  statement {
+    sid    = "AllowDevQAWorkloadSecretsOnly"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:ListSecrets",
+    ]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current[0].account_id}:secret:patheya-express/development-temp/*",
+    ]
+  }
+
+  # Explicit deny — the entire point of this permission set. Follows the exact same
+  # inline-deny-policy pattern already used by the Developer permission set above
+  # (aws_ssoadmin_permission_set_inline_policy + a Deny statement), extended with the five
+  # security-administration services this account uniquely hosts.
+  statement {
+    sid    = "DenySecurityAdministrationAndIAMOrg"
+    effect = "Deny"
+    actions = [
+      "iam:*",
+      "organizations:*",
+      "cloudtrail:*",
+      "guardduty:*",
+      "securityhub:*",
+      "config:*",
+      "access-analyzer:*",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_ssoadmin_permission_set_inline_policy" "devqa_workload_operator" {
+  count              = var.enable_identity_center && var.enable_devqa_temp_operator_permission_set ? 1 : 0
+  instance_arn       = local.sso_instance_arn
+  permission_set_arn = aws_ssoadmin_permission_set.devqa_workload_operator[0].arn
+  inline_policy      = data.aws_iam_policy_document.devqa_workload_operator[0].json
+}
+
+# Assigned to the Security account ONLY — never Management, never any workloads account, and
+# never merged into local.all_account_ids/local.developer_account_ids above. If the "security"
+# key is not yet present in aws_organizations_account.member (e.g. this module applied before
+# that account existed), this for_each is simply empty — it does not error, and does not assign
+# anything prematurely.
+resource "aws_ssoadmin_account_assignment" "devqa_workload_operator" {
+  for_each = var.enable_identity_center && var.enable_devqa_temp_operator_permission_set ? (
+    contains(keys(aws_organizations_account.member), "security") ? { security = aws_organizations_account.member["security"].id } : {}
+  ) : {}
+
+  instance_arn       = local.sso_instance_arn
+  permission_set_arn = aws_ssoadmin_permission_set.devqa_workload_operator[0].arn
+  principal_id       = var.identity_center_group_ids["devqa-workload-operator"]
+  principal_type     = "GROUP"
+  target_id          = each.value
+  target_type        = "AWS_ACCOUNT"
+}

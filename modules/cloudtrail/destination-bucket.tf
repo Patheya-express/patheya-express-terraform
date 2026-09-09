@@ -100,7 +100,7 @@ data "aws_iam_policy_document" "trail_bucket_policy" {
     resources = [aws_s3_bucket.trail[0].arn]
 
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "aws:SourceArn"
       values   = ["arn:${data.aws_partition.current.partition}:cloudtrail:*:${var.management_account_id}:trail/${var.name_prefix}-organization-trail"]
     }
@@ -113,16 +113,28 @@ data "aws_iam_policy_document" "trail_bucket_policy" {
       type        = "Service"
       identifiers = ["cloudtrail.amazonaws.com"]
     }
-    actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.trail[0].arn}/AWSLogs/${var.organization_id}/*"]
+    actions = ["s3:PutObject"]
+    # Two paths, both required for an organization trail: the org-ID-prefixed path covers every
+    # member account's own delivered logs, while the management account's own activity is
+    # delivered under its own account-ID path, not the org-ID-prefixed one — AWS's documented
+    # organization-trail bucket policy requires both simultaneously (confirmed root cause,
+    # Phase 2L: this statement previously granted only the org-ID path).
+    resources = [
+      "${aws_s3_bucket.trail[0].arn}/AWSLogs/${var.organization_id}/*",
+      "${aws_s3_bucket.trail[0].arn}/AWSLogs/${var.management_account_id}/*",
+    ]
 
+    # No s3:x-amz-acl condition here, deliberately: aws_s3_bucket.trail above sets no
+    # aws_s3_bucket_ownership_controls, so this bucket uses AWS's own default Object Ownership
+    # (BucketOwnerEnforced, the default for every bucket created since April 2023) — ACLs are
+    # disabled account-wide for this bucket, and a bucket-owner-full-control ACL condition can
+    # never be satisfied on an ACL-disabled bucket. AWS's own CloudTrail documentation for
+    # BucketOwnerEnforced destination buckets specifies dropping this condition entirely, not
+    # re-enabling ACLs to satisfy it — confirmed as the actual blocker via CreateTrail's
+    # InsufficientS3BucketPolicyException. aws:SourceArn below is unchanged and is already
+    # sufficient to restrict delivery to exactly this organization trail.
     condition {
-      test     = "StringEquals"
-      variable = "s3:x-amz-acl"
-      values   = ["bucket-owner-full-control"]
-    }
-    condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "aws:SourceArn"
       values   = ["arn:${data.aws_partition.current.partition}:cloudtrail:*:${var.management_account_id}:trail/${var.name_prefix}-organization-trail"]
     }

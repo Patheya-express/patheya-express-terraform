@@ -54,9 +54,22 @@ variable "enable_identity_center" {
 }
 
 variable "identity_center_group_ids" {
-  description = "Identity Store group IDs (from the manually-enabled Identity Center instance) to assign permission sets to — keyed by role name (platform-administrator, developer, read-only, security-auditor). Only read when enable_identity_center is true."
+  description = "Identity Store group IDs (from the manually-enabled Identity Center instance) to assign permission sets to — keyed by role name (platform-administrator, developer, read-only, security-auditor, and devqa-workload-operator when enable_devqa_temp_operator_permission_set is true). Only read when enable_identity_center is true."
   type        = map(string)
   default     = {}
+}
+
+variable "enable_devqa_temp_operator_permission_set" {
+  description = <<-EOT
+    false (default) — creates none of the DevQAWorkloadOperator permission-set resources in
+    identity-center.tf, and a plain `terraform apply` of this module is completely unaffected by
+    their existence in the source file. true additionally creates and assigns that permission
+    set, to the Security account only, as the approved compensating control for temporarily
+    hosting environments/development-temp's compute there (Phase 1 §3, Phase 1.5 §5). Only
+    meaningful when enable_identity_center is also true.
+  EOT
+  type        = bool
+  default     = false
 }
 
 variable "budget_limit_usd" {

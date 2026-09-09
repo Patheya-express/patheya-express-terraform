@@ -75,6 +75,7 @@ data "aws_iam_policy_document" "permission_boundary" {
       "ec2:*",
       "elasticloadbalancing:*",
       "eks:*",
+      "ecs:*", # Phase 2 (temporary DEV+QA on ECS Fargate, modules/ecs) — kept alongside eks:*, not in place of it; EKS remains the eventual Production compute target.
       "rds:*",
       "elasticache:*",
       "backup:*",

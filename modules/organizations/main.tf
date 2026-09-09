@@ -13,12 +13,13 @@ resource "aws_organizations_organization" "this" {
   # to be a registered delegated administrator, which in turn requires this service to already be
   # trusted — this principal was previously missing entirely.
   aws_service_access_principals = [
-    "cloudtrail.amazonaws.com",      # modules/cloudtrail's is_organization_trail = true (management account only)
-    "config.amazonaws.com",          # modules/config's organization aggregator + its new delegated-admin registration (modules/config/delegation.tf)
-    "guardduty.amazonaws.com",       # modules/security's aws_guardduty_organization_admin_account
-    "securityhub.amazonaws.com",     # modules/security's aws_securityhub_organization_admin_account
-    "sso.amazonaws.com",             # modules/organizations/identity-center.tf — already the sole principal enabled in the live organization
-    "access-analyzer.amazonaws.com", # modules/security's aws_accessanalyzer_analyzer.organization + its new delegated-admin registration
+    "cloudtrail.amazonaws.com",                   # modules/cloudtrail's is_organization_trail = true (management account only)
+    "config.amazonaws.com",                       # modules/config's organization aggregator + its new delegated-admin registration (modules/config/delegation.tf)
+    "guardduty.amazonaws.com",                    # modules/security's aws_guardduty_organization_admin_account
+    "securityhub.amazonaws.com",                  # modules/security's aws_securityhub_organization_admin_account
+    "sso.amazonaws.com",                          # modules/organizations/identity-center.tf — already the sole principal enabled in the live organization
+    "access-analyzer.amazonaws.com",              # modules/security's aws_accessanalyzer_analyzer.organization + its new delegated-admin registration
+    "malware-protection.guardduty.amazonaws.com", # modules/security/guardduty.tf's aws_guardduty_organization_configuration requests org-wide Malware Protection/EBS auto-enable, which needs this trusted access separately from guardduty.amazonaws.com itself (confirmed root cause, Phase 2R: UpdateOrganizationConfiguration's "AWS Organization master permission" error)
   ]
 
   feature_set = "ALL" # required for SCPs — CONSOLIDATED_BILLING alone can't enforce them; matches the live organization's FeatureSet exactly

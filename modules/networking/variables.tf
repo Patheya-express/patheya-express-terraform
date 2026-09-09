@@ -63,3 +63,46 @@ variable "nlb_allowed_cidrs" {
     error_message = "Every entry in nlb_allowed_cidrs must be a valid IPv4 CIDR block (e.g. \"173.245.48.0/20\")."
   }
 }
+
+# --- ECS/ALB topology (Phase 2, temporary DEV+QA) -----------------------------------------------
+# Additive only: gated behind create_ecs_topology_security_groups (default false), so every
+# existing caller of this module (development/staging/production, none of which pass this
+# variable today) gets byte-for-byte the same plan as before this addition. Distinct resource
+# names (alb/ecs_tasks/rds/redis_ecs, not aurora/redis) — this is a parallel, ECS-fronted
+# topology for a standalone RDS instance and a non-EKS Redis, not a repurposing of the
+# EKS-oriented aurora/redis security groups above, which remain completely untouched.
+
+variable "create_ecs_topology_security_groups" {
+  description = "false (default) creates none of the ALB/ECS-task/RDS/Redis-for-ECS security groups below — every existing caller's plan is unaffected. true additionally creates them, for an ECS Fargate-based environment (e.g. environments/development-temp) that has no EKS nodes at all."
+  type        = bool
+  default     = false
+}
+
+variable "alb_allowed_cidrs" {
+  description = <<-EOT
+    IPv4 CIDR blocks allowed to reach the ALB on 443 — Cloudflare's current published edge IP
+    ranges (https://www.cloudflare.com/ips-v4/), the ECS/ALB counterpart to nlb_allowed_cidrs
+    above. Required and validated non-empty only when create_ecs_topology_security_groups = true;
+    the same rationale as nlb_allowed_cidrs applies verbatim — this repository does not hardcode
+    Cloudflare's IP list, since it changes over time, and the caller (this environment's tfvars)
+    supplies the current list.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for c in var.alb_allowed_cidrs : can(cidrhost(c, 0))])
+    error_message = "Every entry in alb_allowed_cidrs must be a valid IPv4 CIDR block (e.g. \"173.245.48.0/20\")."
+  }
+
+  validation {
+    condition     = !var.create_ecs_topology_security_groups || length(var.alb_allowed_cidrs) > 0
+    error_message = "alb_allowed_cidrs must not be empty when create_ecs_topology_security_groups = true — an empty list would create zero ingress rules on 443, not a 0.0.0.0/0 fallback. Populate it with Cloudflare's current published IPv4 ranges before applying."
+  }
+}
+
+variable "ecs_api_container_port" {
+  description = "The API container's listening port — the ALB target group's forwarded port and the ECS task security group's ingress port from the ALB."
+  type        = number
+  default     = 3000
+}

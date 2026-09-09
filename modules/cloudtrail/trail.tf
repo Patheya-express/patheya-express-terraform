@@ -61,7 +61,14 @@ resource "aws_cloudtrail" "organization" {
   is_organization_trail      = true
   is_multi_region_trail      = true
   enable_log_file_validation = true
-  kms_key_id                 = var.kms_key_arn
+  # No explicit kms_key_id here, deliberately: this trail's destination bucket lives in a
+  # different AWS account (environments/security), and specifying a Management-owned KMS key
+  # here creates a cross-account KMS relationship that key's policy does not authorize
+  # (confirmed root cause, Phase 2I: CreateTrail's InsufficientEncryptionPolicyException).
+  # Omitting this lets CloudTrail rely on the destination bucket's own existing default SSE-KMS
+  # encryption (Security's own, same-account key), which is already sufficient and requires no
+  # cross-account grant. The CloudWatch Logs group below is a same-account (Management) resource
+  # and correctly keeps its own kms_key_id, unaffected by this change.
   cloud_watch_logs_group_arn = "${aws_cloudwatch_log_group.trail[0].arn}:*"
   cloud_watch_logs_role_arn  = aws_iam_role.trail_to_cloudwatch[0].arn
 

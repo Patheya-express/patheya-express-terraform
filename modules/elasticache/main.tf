@@ -5,20 +5,22 @@ resource "aws_elasticache_subnet_group" "this" {
   tags = merge(var.tags, { Application = "elasticache", Purpose = "redis-subnet-group" })
 }
 
-# cluster-enabled=yes is the whole point (cloud-architecture-blueprint.md Section 6: "cluster
-# mode enabled") — set once here, applied identically across every environment; only shard/
-# replica counts vary per environment (variables.tf), never whether cluster mode itself is on.
+# cluster-enabled is driven by var.cluster_mode_enabled (default false) — the application's
+# plain ioredis client (confirmed: no Redis.Cluster, no sentinel, anywhere in
+# apps/api-gateway/src) cannot correctly speak to a cluster-mode-enabled endpoint even with a
+# single shard, so "disabled" is the shape every real caller of this module needs today. true
+# remains available for a future caller with an actual cluster-aware client.
 resource "aws_elasticache_parameter_group" "this" {
   # aws_elasticache_parameter_group has no name_prefix argument (unlike its RDS counterparts) —
   # a literal name is the only option, so create_before_destroy below is what avoids a naming
   # collision on replace instead of a generated suffix.
   name        = "${var.name_prefix}-redis-params"
   family      = "redis7"
-  description = "Cluster mode enabled — one parameter group shape for every environment."
+  description = "Cluster mode ${var.cluster_mode_enabled ? "enabled" : "disabled"} - driven by var.cluster_mode_enabled, not a fixed shape."
 
   parameter {
     name  = "cluster-enabled"
-    value = "yes"
+    value = var.cluster_mode_enabled ? "yes" : "no"
   }
 
   tags = merge(var.tags, { Application = "elasticache", Purpose = "redis-parameter-group" })
@@ -37,14 +39,20 @@ locals {
 
 resource "aws_elasticache_replication_group" "this" {
   replication_group_id = "${var.name_prefix}-redis"
-  description          = "Patheya Express — BullMQ, Socket.IO adapter (Phase 4 app-code follow-up), cache-aside, distributed locks (cloud-architecture-blueprint.md Section 6)."
+  description          = "Patheya Express - BullMQ, Socket.IO adapter (Phase 4 app-code follow-up), cache-aside, distributed locks (cloud-architecture-blueprint.md Section 6)."
 
   engine         = "redis"
   engine_version = var.engine_version
   node_type      = var.node_type
 
-  num_node_groups         = var.num_shards
-  replicas_per_node_group = var.replicas_per_shard
+  # Cluster-mode-enabled and cluster-mode-disabled use mutually exclusive argument shapes on this
+  # same resource type — num_node_groups/replicas_per_node_group only apply when enabled;
+  # number_cache_clusters (total node count: 1 primary + replicas, no shards) is the disabled
+  # shape. Providing both simultaneously is rejected by the provider, hence the two are never set
+  # together below.
+  num_node_groups         = var.cluster_mode_enabled ? var.num_shards : null
+  replicas_per_node_group = var.cluster_mode_enabled ? var.replicas_per_shard : null
+  num_cache_clusters      = var.cluster_mode_enabled ? null : 1 + var.replicas_per_shard
 
   automatic_failover_enabled = local.ha_enabled
   multi_az_enabled           = local.ha_enabled

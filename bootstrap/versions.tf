@@ -18,6 +18,12 @@ terraform {
 provider "aws" {
   region = var.aws_region
 
+  # Phase 2B safety guard: Terraform itself now refuses to plan/apply if the ambient credentials
+  # resolve to any account other than the one this run is explicitly targeting via -var
+  # account_id — closes the "accidentally operate against Management when intending Security" risk
+  # at the tool level, not just operator discipline.
+  allowed_account_ids = [var.account_id]
+
   default_tags {
     tags = {
       Project     = "patheya-express"

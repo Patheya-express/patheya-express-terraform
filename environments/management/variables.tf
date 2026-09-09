@@ -43,3 +43,17 @@ variable "security_finding_notification_emails" {
   type        = list(string)
   default     = []
 }
+
+variable "enable_devqa_temp_operator_permission_set" {
+  description = <<-EOT
+    false (default) — this plan attempts nothing new. true additionally creates the
+    DevQAWorkloadOperator IAM Identity Center permission set (module.organizations) and assigns
+    it to the Security account only, as the approved compensating control for temporarily hosting
+    environments/development-temp's workload there. Enabling this does not create, modify, or
+    touch any ECS/RDS/ElastiCache/ALB/S3/CloudFront resource — those live entirely in
+    environments/development-temp, a separate Terraform root and state. Only meaningful once
+    enable_identity_center is also true.
+  EOT
+  type        = bool
+  default     = false
+}

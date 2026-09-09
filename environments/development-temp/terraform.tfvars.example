@@ -1,0 +1,45 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values before planning/applying.
+#
+# Do NOT apply this environment until:
+#   1. environments/security has been applied for real (so permission_boundary_arn below
+#      actually exists in the account), and
+#   2. this backend has been through its own separate, explicitly-authorized initialization
+#      step (this repository's convention — see environments/security's own history).
+
+organization_id = "o-3aodwvvzk1"
+
+# Cloudflare's current published IPv4 ranges — https://www.cloudflare.com/ips-v4/. Keep this
+# current; do not let it silently go stale.
+cloudflare_ipv4_cidrs = [
+  "173.245.48.0/20",
+  "103.21.244.0/22",
+  "103.22.200.0/22",
+  "103.31.4.0/22",
+  "141.101.64.0/18",
+  "108.162.192.0/18",
+  "190.93.240.0/20",
+  "188.114.96.0/20",
+  "197.234.240.0/22",
+  "198.41.128.0/17",
+  "162.158.0.0/15",
+  "104.16.0.0/13",
+  "104.24.0.0/14",
+  "172.64.0.0/13",
+  "131.0.72.0/22",
+]
+
+# The api-gateway image tag to deploy — a real release tag/SHA already published by the existing
+# backend CI pipeline (backend-release.yml), never "latest".
+image_tag = "<fill in a real published tag>"
+
+# ACM certificate ARNs — provisioned separately, not by this Terraform root.
+alb_certificate_arn          = "<fill in — ACM cert in ap-south-1 for api.qa.patheyaexpress.com>"
+frontend_acm_certificate_arn = "<fill in — ACM cert in us-east-1 for *.qa.patheyaexpress.com>"
+
+# The Security account's existing permission boundary, created by environments/security's own
+# module.iam call. Deterministic once that environment is applied:
+permission_boundary_arn = "arn:aws:iam::512206886196:policy/patheya-security-permission-boundary"
+
+# Optional — subscribed to the ElastiCache alarm SNS topic. Left empty by default; this
+# repository does not invent a real address.
+# alert_email_addresses = ["platform-engineering@patheyaexpress.com"]

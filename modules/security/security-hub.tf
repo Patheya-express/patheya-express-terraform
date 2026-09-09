@@ -25,15 +25,28 @@ resource "aws_securityhub_organization_admin_account" "this" {
   admin_account_id = var.delegate_admin_account_id
 }
 
+# Security account only (as delegated admin). AWS requires a finding aggregator (which
+# designates the home Region) to exist before CENTRAL configuration can be enabled.
+resource "aws_securityhub_finding_aggregator" "this" {
+  count = var.is_delegated_admin_account && var.enable_security_hub ? 1 : 0
+
+  linking_mode = "ALL_REGIONS"
+}
+
 # Security account only (as delegated admin).
 resource "aws_securityhub_organization_configuration" "this" {
   count = var.is_delegated_admin_account && var.enable_security_hub ? 1 : 0
 
-  auto_enable           = true
+  # AWS's documented CENTRAL-configuration procedure requires this to be false — CENTRAL manages
+  # enablement through configuration policies instead (confirmed root cause, Phase 2T).
+  auto_enable           = false
   auto_enable_standards = "NONE" # standards are subscribed explicitly above, not auto-selected by AWS
   organization_configuration {
     configuration_type = "CENTRAL" # Security Hub's central configuration — one place to manage standards/controls for every member account, rather than each account configuring its own
   }
 
-  depends_on = [aws_securityhub_organization_admin_account.this]
+  depends_on = [
+    aws_securityhub_organization_admin_account.this,
+    aws_securityhub_finding_aggregator.this,
+  ]
 }

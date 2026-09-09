@@ -12,7 +12,7 @@ resource "random_password" "redis_auth_token" {
   # reason.
   length           = 64
   special          = true
-  override_special = "!#$%^&*()-_=+[]{}<>:?"
+  override_special = "!&#$^<>-"
 }
 
 resource "aws_secretsmanager_secret" "redis_auth_token" {
