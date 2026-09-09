@@ -192,25 +192,24 @@ locals {
   external_secret_arns = module.secrets_manager.external_credential_secret_arns
 
   app_secrets = {
-    JWT_ACCESS_SECRET           = "${local.external_secret_arns["jwt-signing-key"]}:accessSecret::"
-    JWT_REFRESH_SECRET          = "${local.external_secret_arns["jwt-signing-key"]}:refreshSecret::"
-    CLOUDINARY_CLOUD_NAME       = "${local.external_secret_arns["cloudinary"]}:cloudName::"
-    CLOUDINARY_API_KEY          = "${local.external_secret_arns["cloudinary"]}:apiKey::"
-    CLOUDINARY_API_SECRET       = "${local.external_secret_arns["cloudinary"]}:apiSecret::"
-    RAZORPAY_KEY_ID             = "${local.external_secret_arns["razorpay"]}:keyId::"
-    RAZORPAY_KEY_SECRET         = "${local.external_secret_arns["razorpay"]}:keySecret::"
-    SMTP_HOST                   = "${local.external_secret_arns["smtp"]}:host::"
-    SMTP_PORT                   = "${local.external_secret_arns["smtp"]}:port::"
-    SMTP_USER                   = "${local.external_secret_arns["smtp"]}:user::"
-    SMTP_PASS                   = "${local.external_secret_arns["smtp"]}:pass::"
-    SMTP_FROM                   = "${local.external_secret_arns["smtp"]}:from::"
-    BANK_ACCOUNT_ENCRYPTION_KEY = local.external_secret_arns["bank-account-encryption-key"]
-    SUPER_ADMIN_EMAIL           = "${local.external_secret_arns["super-admin-bootstrap"]}:email::"
-    SUPER_ADMIN_PASSWORD        = "${local.external_secret_arns["super-admin-bootstrap"]}:password::"
-    SUPER_ADMIN_FIRST_NAME      = "${local.external_secret_arns["super-admin-bootstrap"]}:firstName::"
-    SUPER_ADMIN_LAST_NAME       = "${local.external_secret_arns["super-admin-bootstrap"]}:lastName::"
-    SUPER_ADMIN_PHONE           = "${local.external_secret_arns["super-admin-bootstrap"]}:phone::"
-    REDIS_AUTH_TOKEN            = module.secrets_manager.redis_auth_token_secret_arn
+    JWT_ACCESS_SECRET      = "${local.external_secret_arns["jwt-signing-key"]}:accessSecret::"
+    JWT_REFRESH_SECRET     = "${local.external_secret_arns["jwt-signing-key"]}:refreshSecret::"
+    CLOUDINARY_CLOUD_NAME  = "${local.external_secret_arns["cloudinary"]}:cloudName::"
+    CLOUDINARY_API_KEY     = "${local.external_secret_arns["cloudinary"]}:apiKey::"
+    CLOUDINARY_API_SECRET  = "${local.external_secret_arns["cloudinary"]}:apiSecret::"
+    RAZORPAY_KEY_ID        = "${local.external_secret_arns["razorpay"]}:keyId::"
+    RAZORPAY_KEY_SECRET    = "${local.external_secret_arns["razorpay"]}:keySecret::"
+    SMTP_HOST              = "${local.external_secret_arns["smtp"]}:host::"
+    SMTP_PORT              = "${local.external_secret_arns["smtp"]}:port::"
+    SMTP_USER              = "${local.external_secret_arns["smtp"]}:user::"
+    SMTP_PASS              = "${local.external_secret_arns["smtp"]}:pass::"
+    SMTP_FROM              = "${local.external_secret_arns["smtp"]}:from::"
+    SUPER_ADMIN_EMAIL      = "${local.external_secret_arns["super-admin-bootstrap"]}:email::"
+    SUPER_ADMIN_PASSWORD   = "${local.external_secret_arns["super-admin-bootstrap"]}:password::"
+    SUPER_ADMIN_FIRST_NAME = "${local.external_secret_arns["super-admin-bootstrap"]}:firstName::"
+    SUPER_ADMIN_LAST_NAME  = "${local.external_secret_arns["super-admin-bootstrap"]}:lastName::"
+    SUPER_ADMIN_PHONE      = "${local.external_secret_arns["super-admin-bootstrap"]}:phone::"
+    REDIS_AUTH_TOKEN       = module.secrets_manager.redis_auth_token_secret_arn
   }
 
   derived_environment = {
