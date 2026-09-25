@@ -4,10 +4,10 @@ variable "environment" {
 
   validation {
     condition = contains(
-      ["management", "security", "shared-services", "development", "staging", "production", "dr"],
+      ["management", "security", "shared-services", "development", "qa", "staging", "production", "dr"],
       var.environment
     )
-    error_message = "environment must be one of: management, security, shared-services, development, staging, production, dr (cloud-architecture-blueprint.md Section 2)."
+    error_message = "environment must be one of: management, security, shared-services, development, qa, staging, production, dr (cloud-architecture-blueprint.md Section 2, extended for the QA account added in Phase 1B)."
   }
 }
 

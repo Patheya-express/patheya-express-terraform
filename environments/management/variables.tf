@@ -38,6 +38,26 @@ variable "identity_center_group_ids" {
   default = {}
 }
 
+variable "platform_administrator_account_keys" {
+  type    = list(string)
+  default = []
+}
+
+variable "read_only_account_keys" {
+  type    = list(string)
+  default = []
+}
+
+variable "security_auditor_account_keys" {
+  type    = list(string)
+  default = []
+}
+
+variable "developer_account_keys" {
+  type    = list(string)
+  default = ["development", "staging", "production"]
+}
+
 variable "security_finding_notification_emails" {
   description = "Email addresses to subscribe to this account's GuardDuty/Security Hub finding notifications (modules/security's finding_notification_emails). Defaults to empty — this repository does not invent one; populate via terraform.tfvars once a real address or distribution list exists."
   type        = list(string)

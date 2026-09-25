@@ -133,6 +133,8 @@ module "rds" {
   kms_key_arn             = module.kms.key_arns["database"]
 
   deletion_protection = false # temporary, intentionally-destroyable environment
+
+  alarm_sns_topic_arn = aws_sns_topic.alerts.arn
 }
 
 module "elasticache" {
@@ -183,6 +185,8 @@ module "alb" {
   public_subnet_ids     = module.vpc.public_subnet_ids
   alb_security_group_id = module.networking.alb_security_group_id
   certificate_arn       = var.alb_certificate_arn
+
+  alarm_sns_topic_arn = aws_sns_topic.alerts.arn
 }
 
 locals {
@@ -251,6 +255,8 @@ module "ecs" {
   app_environment         = merge(local.derived_environment, var.app_non_secret_environment)
 
   permission_boundary_arn = var.permission_boundary_arn
+
+  alarm_sns_topic_arn = aws_sns_topic.alerts.arn
 }
 
 module "static_site" {

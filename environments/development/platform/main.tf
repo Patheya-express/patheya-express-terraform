@@ -2,7 +2,7 @@ data "terraform_remote_state" "cluster" {
   backend = "s3"
 
   config = {
-    bucket = "patheya-express-terraform-state-<development-account-id>"
+    bucket = "patheya-express-terraform-state-433985779683"
     key    = "development/cluster/terraform.tfstate"
     region = "ap-south-1"
   }
@@ -14,7 +14,7 @@ data "terraform_remote_state" "data" {
   backend = "s3"
 
   config = {
-    bucket = "patheya-express-terraform-state-<development-account-id>"
+    bucket = "patheya-express-terraform-state-433985779683"
     key    = "development/data/terraform.tfstate"
     region = "ap-south-1"
   }

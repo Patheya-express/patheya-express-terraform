@@ -23,7 +23,7 @@ resource "aws_ssoadmin_permission_set" "platform_administrator" {
   count = var.enable_identity_center ? 1 : 0
 
   name             = "PlatformAdministrator"
-  description      = "Full account administration — platform engineering only."
+  description      = "Full account administration - platform engineering only."
   instance_arn     = local.sso_instance_arn
   session_duration = "PT4H"
   tags             = merge(var.tags, { Application = "organizations", Purpose = "sso-platform-administrator" })
@@ -76,7 +76,7 @@ resource "aws_ssoadmin_permission_set" "read_only" {
   count = var.enable_identity_center ? 1 : 0
 
   name             = "ReadOnly"
-  description      = "Read-only access across every service — the default for anyone who needs visibility without change authority."
+  description      = "Read-only access across every service - the default for anyone who needs visibility without change authority."
   instance_arn     = local.sso_instance_arn
   session_duration = "PT8H"
   tags             = merge(var.tags, { Application = "organizations", Purpose = "sso-read-only" })
@@ -93,7 +93,7 @@ resource "aws_ssoadmin_permission_set" "security_auditor" {
   count = var.enable_identity_center ? 1 : 0
 
   name             = "SecurityAuditor"
-  description      = "AWS-managed SecurityAudit policy — read access to security/config-relevant resources across every account, for the security team."
+  description      = "AWS-managed SecurityAudit policy - read access to security/config-relevant resources across every account, for the security team."
   instance_arn     = local.sso_instance_arn
   session_duration = "PT8H"
   tags             = merge(var.tags, { Application = "organizations", Purpose = "sso-security-auditor" })
@@ -118,9 +118,24 @@ locals {
     { for k, v in aws_organizations_account.member : k => v.id }
   ) : {}
 
+  platform_administrator_account_ids = var.enable_identity_center ? {
+    for k, v in local.all_account_ids :
+    k => v if contains(var.platform_administrator_account_keys, k)
+  } : {}
+
+  read_only_account_ids = var.enable_identity_center ? {
+    for k, v in local.all_account_ids :
+    k => v if contains(var.read_only_account_keys, k)
+  } : {}
+
+  security_auditor_account_ids = var.enable_identity_center ? {
+    for k, v in local.all_account_ids :
+    k => v if contains(var.security_auditor_account_keys, k)
+  } : {}
+
   developer_account_ids = var.enable_identity_center ? {
-    for k, v in aws_organizations_account.member : k => v.id
-    if contains(["development", "staging", "production"], k)
+    for k, v in local.all_account_ids :
+    k => v if contains(var.developer_account_keys, k)
   } : {}
 }
 
@@ -129,7 +144,7 @@ data "aws_caller_identity" "current" {
 }
 
 resource "aws_ssoadmin_account_assignment" "platform_administrator" {
-  for_each = var.enable_identity_center ? local.all_account_ids : {}
+  for_each = local.platform_administrator_account_ids
 
   instance_arn       = local.sso_instance_arn
   permission_set_arn = aws_ssoadmin_permission_set.platform_administrator[0].arn
@@ -140,7 +155,7 @@ resource "aws_ssoadmin_account_assignment" "platform_administrator" {
 }
 
 resource "aws_ssoadmin_account_assignment" "security_auditor" {
-  for_each = var.enable_identity_center ? local.all_account_ids : {}
+  for_each = local.security_auditor_account_ids
 
   instance_arn       = local.sso_instance_arn
   permission_set_arn = aws_ssoadmin_permission_set.security_auditor[0].arn
@@ -151,7 +166,7 @@ resource "aws_ssoadmin_account_assignment" "security_auditor" {
 }
 
 resource "aws_ssoadmin_account_assignment" "read_only" {
-  for_each = var.enable_identity_center ? local.all_account_ids : {}
+  for_each = local.read_only_account_ids
 
   instance_arn       = local.sso_instance_arn
   permission_set_arn = aws_ssoadmin_permission_set.read_only[0].arn

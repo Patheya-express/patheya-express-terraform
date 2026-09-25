@@ -79,6 +79,7 @@ variable "budget_limit_usd" {
     security          = 200
     "shared-services" = 500
     development       = 800
+    qa                = 800
     staging           = 1200
     production        = 5000
     dr                = 1000
@@ -88,4 +89,64 @@ variable "budget_limit_usd" {
 variable "budget_notification_emails" {
   description = "Email addresses notified at 50%/80%/100% of each account's budget (platform-standards.md Section 20)."
   type        = list(string)
+}
+
+variable "platform_administrator_account_keys" {
+  description = "Account keys (\"management\" or a key in var.member_accounts) assigned the PlatformAdministrator permission set. Defaults to none — nothing is assigned merely because the permission set exists; each account must be explicitly listed."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for k in var.platform_administrator_account_keys :
+      contains(concat(["management"], keys(var.member_accounts)), k)
+    ])
+
+    error_message = "Each key must be \"management\" or a key present in var.member_accounts."
+  }
+}
+
+variable "read_only_account_keys" {
+  description = "Account keys assigned the ReadOnly permission set. Defaults to none — each account must be explicitly listed."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for k in var.read_only_account_keys :
+      contains(concat(["management"], keys(var.member_accounts)), k)
+    ])
+
+    error_message = "Each key must be \"management\" or a key present in var.member_accounts."
+  }
+}
+
+variable "security_auditor_account_keys" {
+  description = "Account keys assigned the SecurityAuditor permission set. Defaults to none — each account must be explicitly listed."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for k in var.security_auditor_account_keys :
+      contains(concat(["management"], keys(var.member_accounts)), k)
+    ])
+
+    error_message = "Each key must be \"management\" or a key present in var.member_accounts."
+  }
+}
+
+variable "developer_account_keys" {
+  description = "Account keys assigned the Developer permission set. Defaults to the existing workload account list."
+  type        = list(string)
+  default     = ["development", "staging", "production"]
+
+  validation {
+    condition = alltrue([
+      for k in var.developer_account_keys :
+      contains(concat(["management"], keys(var.member_accounts)), k)
+    ])
+
+    error_message = "Each key must be \"management\" or a key present in var.member_accounts."
+  }
 }

@@ -1,12 +1,24 @@
-# Reads Phase 2's already-applied network foundation (same account, same state bucket — a
-# same-account remote state read is a plain S3 read the Terraform CI role already has access to,
+# Phase 1D.2 — split into two explicit remote-state reads: "network" (VPC/subnets/security
+# groups, now environments/development/network/'s own state) and "account" (IAM/Route53/Config/
+# Security's state — this same account, same state bucket, just the unchanged account-root key).
+# A same-account remote state read is a plain S3 read the Terraform CI role already has access to,
 # unlike the cross-account reads Phase 2 deliberately avoided; see that phase's environments/
-# READMEs for why cross-account remote state was skipped there).
+# READMEs for why cross-account remote state was skipped there.
 data "terraform_remote_state" "network" {
   backend = "s3"
 
   config = {
-    bucket = "patheya-express-terraform-state-<development-account-id>"
+    bucket = "patheya-express-terraform-state-433985779683"
+    key    = "development/network/terraform.tfstate"
+    region = "ap-south-1"
+  }
+}
+
+data "terraform_remote_state" "account" {
+  backend = "s3"
+
+  config = {
+    bucket = "patheya-express-terraform-state-433985779683"
     key    = "development/terraform.tfstate"
     region = "ap-south-1"
   }
@@ -31,7 +43,7 @@ module "kms" {
     eks-secrets = {
       description         = "Envelope-encrypts Kubernetes Secrets objects for this cluster"
       additional_services = []
-      key_administrators  = [data.terraform_remote_state.network.outputs.terraform_role_arn]
+      key_administrators  = [data.terraform_remote_state.account.outputs.terraform_role_arn]
     }
   }
 }
@@ -61,7 +73,7 @@ module "eks" {
 
   access_entries = {
     terraform-ci = {
-      principal_arn      = data.terraform_remote_state.network.outputs.terraform_role_arn
+      principal_arn      = data.terraform_remote_state.account.outputs.terraform_role_arn
       access_policy_arns = ["arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"]
     }
     # IAM Identity Center human access entries (PlatformAdministrator/Developer/ReadOnly/

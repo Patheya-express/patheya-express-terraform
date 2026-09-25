@@ -2,7 +2,7 @@ data "terraform_remote_state" "network" {
   backend = "s3"
 
   config = {
-    bucket = "patheya-express-terraform-state-<production-account-id>"
+    bucket = "patheya-express-terraform-state-512297269884"
     key    = "production/terraform.tfstate"
     region = "ap-south-1"
   }

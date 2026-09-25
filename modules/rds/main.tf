@@ -47,13 +47,21 @@ resource "aws_db_parameter_group" "this" {
 
 # ElastiCache AUTH token constraints don't apply here (this is the RDS/Postgres master password,
 # not Redis AUTH) — RDS's own constraint set is: 8-128 printable ASCII characters, excluding
-# "/", '"', "@", and space. override_special is narrowed to exactly the special characters RDS
-# actually accepts, for the same reason modules/secrets-manager narrows Redis's: a password with
-# zero special characters is weaker for no protocol-compliance reason.
+# "/", '"', "@", and space.
+#
+# Pinned to "!$&*()-_=+" (a proper subset of RDS's full allowed special-character set, not a
+# protocol-compliance issue either way) because this is the value the live development-temp
+# database's master password was actually generated under (confirmed against a prior
+# terraform plan artifact and this account's Secrets Manager write history) — this module has
+# only one caller (environments/development-temp), and that database is live and actively
+# serving traffic. A wider override_special here would force-replace random_password.master and
+# silently rotate the live RDS master password on the next apply, with no coordinated
+# ECS service redeploy to pick up the new credential. Revisit only alongside a deliberate,
+# coordinated password-rotation change, not as an incidental side effect of a module edit.
 resource "random_password" "master" {
   length           = 32
   special          = true
-  override_special = "!#$%&*()-_=+[]{}<>:?"
+  override_special = "!$&*()-_=+"
 }
 
 resource "aws_db_instance" "this" {

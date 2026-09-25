@@ -19,6 +19,11 @@ module "organizations" {
   enable_identity_center    = var.enable_identity_center
   identity_center_group_ids = var.identity_center_group_ids
 
+  platform_administrator_account_keys = var.platform_administrator_account_keys
+  read_only_account_keys              = var.read_only_account_keys
+  security_auditor_account_keys       = var.security_auditor_account_keys
+  developer_account_keys              = var.developer_account_keys
+
   # Phase 2 (temporary DEV+QA on ECS Fargate in the Security account) — false by default, so this
   # existing management plan is completely unaffected unless explicitly turned on. See
   # modules/organizations/identity-center.tf's DevQAWorkloadOperator resources.

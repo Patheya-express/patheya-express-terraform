@@ -101,3 +101,8 @@ variable "environment" {
   description = "Used only in the DATABASE_URL secret's naming path (patheya-express/<environment>/database-url), matching modules/secrets-manager's existing naming convention — not used for conditional logic."
   type        = string
 }
+
+variable "alarm_sns_topic_arn" {
+  description = "Alarms still evaluate and appear in CloudWatch with this unset, but notify no one — always pass this."
+  type        = string
+}

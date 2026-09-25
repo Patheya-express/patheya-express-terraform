@@ -20,6 +20,7 @@ resource "aws_organizations_organization" "this" {
     "sso.amazonaws.com",                          # modules/organizations/identity-center.tf — already the sole principal enabled in the live organization
     "access-analyzer.amazonaws.com",              # modules/security's aws_accessanalyzer_analyzer.organization + its new delegated-admin registration
     "malware-protection.guardduty.amazonaws.com", # modules/security/guardduty.tf's aws_guardduty_organization_configuration requests org-wide Malware Protection/EBS auto-enable, which needs this trusted access separately from guardduty.amazonaws.com itself (confirmed root cause, Phase 2R: UpdateOrganizationConfiguration's "AWS Organization master permission" error)
+    "account.amazonaws.com",                      # Phase 1B drift investigation: enabled out-of-band on 2026-09-24 to centrally manage member-account root email addresses (AWS Account Management service) from the management account, per AWS's documented mechanism for this operation — used to update the Security and Development accounts' root emails. Declared here so Terraform's own config matches the live, intentionally-enabled trusted access instead of drifting against it.
   ]
 
   feature_set = "ALL" # required for SCPs — CONSOLIDATED_BILLING alone can't enforce them; matches the live organization's FeatureSet exactly

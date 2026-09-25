@@ -36,9 +36,9 @@ output "eks_node_security_group_id" {
 }
 
 output "route53_zone_id" {
-  value = data.terraform_remote_state.network.outputs.route53_zone_id
+  value = data.terraform_remote_state.account.outputs.route53_zone_id
 }
 
 output "acm_certificate_arn" {
-  value = data.terraform_remote_state.network.outputs.acm_certificate_arn
+  value = data.terraform_remote_state.account.outputs.acm_certificate_arn
 }

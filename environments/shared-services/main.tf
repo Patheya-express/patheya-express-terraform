@@ -24,7 +24,7 @@ module "iam" {
   backend_ecr_repository_arns = [module.ecr.repository_arns["api-gateway"]]
   frontend_ecr_repository_arns = [
     module.ecr.repository_arns["customer-app"],
-    module.ecr.repository_arns["partner-app"],
+    module.ecr.repository_arns["restaurant-app"],
     module.ecr.repository_arns["delivery-app"],
     module.ecr.repository_arns["admin-app"],
   ]
@@ -50,6 +50,13 @@ module "ecr" {
   tags            = module.shared.tags
   kms_key_arn     = module.kms.key_arns["ecr"]
   organization_id = var.organization_id
+
+  # Overrides the module default's "partner-app" — the frontend release pipeline
+  # (frontend/.github/workflows/frontend-release.yml's matrix) actually pushes to a repository
+  # named "restaurant-app", matching the real app in frontend/apps/restaurant-app. Explicit here
+  # rather than changing the module's own default, since this is the only environment that
+  # populates real ECR content.
+  repository_names = ["api-gateway", "customer-app", "restaurant-app", "delivery-app", "admin-app"]
 }
 
 # The apex zone — patheyaexpress.com itself. Every environment's own delegated subdomain zone

@@ -173,3 +173,10 @@ variable "permission_boundary_arn" {
   EOT
   type        = string
 }
+
+# --- Monitoring ------------------------------------------------------------------------------------
+
+variable "alarm_sns_topic_arn" {
+  description = "Alarms still evaluate and appear in CloudWatch with this unset, but notify no one — always pass this."
+  type        = string
+}

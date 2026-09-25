@@ -1,8 +1,21 @@
+# Phase 1D.2 — split into two explicit remote-state reads: "network" (VPC/subnets/security
+# groups, now environments/development/network/'s own state) and "account" (IAM/Route53/Config/
+# Security's state — this same account, same state bucket, just the unchanged account-root key).
 data "terraform_remote_state" "network" {
   backend = "s3"
 
   config = {
-    bucket = "patheya-express-terraform-state-<development-account-id>"
+    bucket = "patheya-express-terraform-state-433985779683"
+    key    = "development/network/terraform.tfstate"
+    region = "ap-south-1"
+  }
+}
+
+data "terraform_remote_state" "account" {
+  backend = "s3"
+
+  config = {
+    bucket = "patheya-express-terraform-state-433985779683"
     key    = "development/terraform.tfstate"
     region = "ap-south-1"
   }
@@ -26,17 +39,17 @@ module "kms" {
   keys = {
     aurora = {
       description         = "Encrypts the Aurora PostgreSQL cluster, its RDS-managed master secret, and Performance Insights"
-      key_administrators  = [data.terraform_remote_state.network.outputs.terraform_role_arn]
+      key_administrators  = [data.terraform_remote_state.account.outputs.terraform_role_arn]
       additional_services = ["rds.amazonaws.com"]
     }
     redis = {
       description         = "Encrypts the ElastiCache Redis replication group at rest"
-      key_administrators  = [data.terraform_remote_state.network.outputs.terraform_role_arn]
+      key_administrators  = [data.terraform_remote_state.account.outputs.terraform_role_arn]
       additional_services = ["elasticache.amazonaws.com"]
     }
     secrets = {
       description         = "Encrypts Secrets Manager entries this environment owns (Redis AUTH token, external SaaS credential containers)"
-      key_administrators  = [data.terraform_remote_state.network.outputs.terraform_role_arn]
+      key_administrators  = [data.terraform_remote_state.account.outputs.terraform_role_arn]
       additional_services = ["secretsmanager.amazonaws.com"]
     }
   }
@@ -54,7 +67,7 @@ module "kms_dr" {
   keys = {
     aurora-backup-dr = {
       description         = "Encrypts the DR-region (ap-southeast-1) copy of Aurora's AWS Backup snapshots"
-      key_administrators  = [data.terraform_remote_state.network.outputs.terraform_role_arn]
+      key_administrators  = [data.terraform_remote_state.account.outputs.terraform_role_arn]
       additional_services = ["backup.amazonaws.com"]
     }
   }
