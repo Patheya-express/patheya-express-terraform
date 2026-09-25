@@ -1,0 +1,66 @@
+name: TEMP - Production runner connectivity test
+
+# TEMPORARY - delete this file once the Production self-hosted runner's connectivity has been
+# proven and this workflow has served its purpose. Not part of the normal CI pipeline
+# (terraform-ci.yml is unmodified) - manual trigger only, verifies infrastructure, touches no
+# Terraform state, deploys nothing, changes nothing.
+#
+# Verifies exactly 5 things:
+#   1. The job actually lands on the new Production self-hosted runner (not a GitHub-hosted one)
+#   2. GitHub OIDC -> the existing Terraform CI IAM role assumption succeeds
+#   3. The authenticated AWS account is 512297269884 (Production)
+#   4. Basic AWS API access works (sts get-caller-identity, one read-only ec2 call)
+#   5. DNS/network connectivity works (resolve + reach a real AWS API endpoint)
+#
+# No Kubernetes/EKS connectivity check - the Production EKS cluster does not exist yet.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  connectivity-test:
+    name: Verify runner + OIDC + network
+    runs-on: [self-hosted, production, private-eks]
+    steps:
+      - name: 1. Confirm this is the expected self-hosted runner
+        run: |
+          echo "Runner name: $RUNNER_NAME"
+          echo "Runner OS: $RUNNER_OS"
+          echo "Expected labels: self-hosted, production, private-eks"
+          hostname
+
+      - name: 2/3. Assume the existing Terraform CI role via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.TF_ROLE_ARN_PRODUCTION }}
+          aws-region: ap-south-1
+          role-session-name: production-runner-connectivity-test
+
+      - name: 3. Confirm the authenticated AWS account is 512297269884
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "Authenticated as account: $ACCOUNT"
+          if [ "$ACCOUNT" != "512297269884" ]; then
+            echo "::error::Expected account 512297269884, got $ACCOUNT"
+            exit 1
+          fi
+          echo "Account check passed."
+
+      - name: 4. Basic AWS API access (read-only)
+        run: |
+          aws ec2 describe-vpcs --region ap-south-1 --query 'Vpcs[].VpcId' --output text
+          echo "AWS API read access confirmed."
+
+      - name: 5. DNS resolution + network reachability
+        run: |
+          getent hosts sts.ap-south-1.amazonaws.com
+          getent hosts ec2.ap-south-1.amazonaws.com
+          curl -sS -o /dev/null -w "sts endpoint HTTP status: %{http_code}\n" https://sts.ap-south-1.amazonaws.com
+          echo "DNS/network connectivity confirmed."
+
+      - name: Summary
+        run: echo "All 5 connectivity checks passed on the Production self-hosted runner."
