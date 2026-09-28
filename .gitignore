@@ -17,6 +17,10 @@
 # specific values that, even when non-secret, don't belong in Git (Section 6, platform-standards.md)
 *.tfvars
 !*.tfvars.example
+# Exception: each Production layer's operating mode is committed on purpose, so a lifecycle
+# change (idle/build/live) is a reviewed Git change - docs/production-lifecycle.md.
+!environments/production/**/operating-mode.auto.tfvars
+!environments/production/operating-mode.auto.tfvars
 
 # Crash logs
 crash.log
