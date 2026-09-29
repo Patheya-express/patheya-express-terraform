@@ -33,6 +33,20 @@ module "iam" {
   name_prefix = module.shared.name_prefix
 }
 
+module "kms" {
+  source = "../../modules/kms"
+
+  tags        = module.shared.tags
+  name_prefix = module.shared.name_prefix
+
+  keys = {
+    cloudtrail-logs = {
+      description         = "Encrypts this account's VPC Flow Logs, Config snapshots, and its security-findings SNS topic"
+      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "delivery.logs.amazonaws.com", "sns.amazonaws.com"]
+    }
+  }
+}
+
 module "route53" {
   source = "../../modules/route53"
 
@@ -45,7 +59,7 @@ module "config" {
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
-  kms_key_arn = data.terraform_remote_state.network.outputs.cloudtrail_logs_kms_key_arn
+  kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
 }
 
 module "security" {
@@ -53,7 +67,7 @@ module "security" {
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
-  kms_key_arn = data.terraform_remote_state.network.outputs.cloudtrail_logs_kms_key_arn
+  kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
   # is_delegated_admin_account and delegate_admin_account_id both left at their false/null
   # defaults — this account is enrolled automatically by the security account's org-wide
   # auto-enable (modules/security's guardduty.tf / security-hub.tf), it doesn't configure
