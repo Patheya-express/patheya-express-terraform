@@ -28,3 +28,17 @@ output "redis_security_group_id" {
 output "terraform_role_arn" {
   value = module.iam.terraform_role_arn
 }
+
+output "operating_mode" {
+  value = var.operating_mode
+}
+
+output "eks_secrets_kms_key_arn" {
+  description = "Consumed by cluster/ — Kubernetes Secrets envelope encryption for whichever cluster currently exists."
+  value       = module.kms.key_arns["eks-secrets"]
+}
+
+output "eks_cluster_log_group_name" {
+  description = "Consumed by cluster/ — the persistent log group EKS delivers control-plane logs into (eks-persistent.tf)."
+  value       = aws_cloudwatch_log_group.eks_cluster.name
+}

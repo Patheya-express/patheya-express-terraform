@@ -27,6 +27,8 @@ module "tailscale_router" {
   # The exact 3 private-app subnet CIDRs from this root's own module.vpc call above - never the
   # whole 10.30.0.0/16 VPC CIDR, which would also expose the private-data tier.
   advertised_route_cidrs = ["10.30.16.0/20", "10.30.32.0/20", "10.30.48.0/20"]
+
+  desired_capacity = local.runtime.tailscale_router # 0 in idle - no cluster endpoint to reach, and no NAT for it to reach Tailscale through
 }
 
 module "github_runner" {
@@ -39,6 +41,8 @@ module "github_runner" {
   private_app_subnet_ids  = module.vpc.private_app_subnet_ids
   permission_boundary_arn = module.iam.permission_boundary_arn
   kms_key_arn             = module.kms.key_arns["admin-connectivity"]
+
+  desired_count = local.runtime.github_runner # 0 in idle - its only purpose is reaching the private EKS endpoint
 }
 
 # SG-to-SG ingress on the existing eks_nodes security group (module.networking) - not modifying

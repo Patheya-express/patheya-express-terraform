@@ -2,8 +2,13 @@
 # explicitly version-pinned/configured here — "whatever EKS defaulted to on creation day" is not
 # reproducible; a Terraform-managed aws_eks_addon resource is (platform-standards.md Section 1,
 # principle 4).
+#
+# manage_core_addons = false when the cluster layer (modules/eks managed_addons) already owns
+# these three — two Terraform resources managing one EKS add-on would fight on every apply.
 
 resource "aws_eks_addon" "vpc_cni" {
+  count = var.manage_core_addons ? 1 : 0
+
   cluster_name = var.cluster_name
   addon_name   = "vpc-cni"
 
@@ -26,6 +31,8 @@ resource "aws_eks_addon" "vpc_cni" {
 }
 
 resource "aws_eks_addon" "coredns" {
+  count = var.manage_core_addons ? 1 : 0
+
   cluster_name = var.cluster_name
   addon_name   = "coredns"
 
@@ -50,6 +57,8 @@ resource "aws_eks_addon" "coredns" {
 }
 
 resource "aws_eks_addon" "kube_proxy" {
+  count = var.manage_core_addons ? 1 : 0
+
   cluster_name = var.cluster_name
   addon_name   = "kube-proxy"
 
@@ -57,4 +66,19 @@ resource "aws_eks_addon" "kube_proxy" {
   resolve_conflicts_on_update = "OVERWRITE"
 
   tags = merge(var.tags, { Application = "eks-addons", Purpose = "kube-proxy" })
+}
+
+moved {
+  from = aws_eks_addon.vpc_cni
+  to   = aws_eks_addon.vpc_cni[0]
+}
+
+moved {
+  from = aws_eks_addon.coredns
+  to   = aws_eks_addon.coredns[0]
+}
+
+moved {
+  from = aws_eks_addon.kube_proxy
+  to   = aws_eks_addon.kube_proxy[0]
 }

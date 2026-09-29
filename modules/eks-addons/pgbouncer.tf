@@ -16,6 +16,8 @@ locals {
 }
 
 resource "kubernetes_config_map_v1" "pgbouncer_config" {
+  count = var.data_layer_enabled ? 1 : 0
+
   metadata {
     name      = "pgbouncer-config"
     namespace = local.pgbouncer_namespace
@@ -50,6 +52,8 @@ resource "kubernetes_config_map_v1" "pgbouncer_config" {
 }
 
 resource "kubernetes_deployment_v1" "pgbouncer" {
+  count = var.data_layer_enabled ? 1 : 0
+
   metadata {
     name      = "pgbouncer"
     namespace = local.pgbouncer_namespace
@@ -289,7 +293,7 @@ resource "kubernetes_deployment_v1" "pgbouncer" {
         volume {
           name = "config"
           config_map {
-            name = kubernetes_config_map_v1.pgbouncer_config.metadata[0].name
+            name = kubernetes_config_map_v1.pgbouncer_config[0].metadata[0].name
           }
         }
         volume {
@@ -308,6 +312,8 @@ resource "kubernetes_deployment_v1" "pgbouncer" {
 }
 
 resource "kubernetes_service_v1" "pgbouncer" {
+  count = var.data_layer_enabled ? 1 : 0
+
   metadata {
     name      = "pgbouncer"
     namespace = local.pgbouncer_namespace
@@ -335,6 +341,8 @@ resource "kubernetes_service_v1" "pgbouncer" {
 }
 
 resource "kubernetes_pod_disruption_budget_v1" "pgbouncer" {
+  count = var.data_layer_enabled ? 1 : 0
+
   metadata {
     name      = "pgbouncer"
     namespace = local.pgbouncer_namespace
@@ -348,4 +356,24 @@ resource "kubernetes_pod_disruption_budget_v1" "pgbouncer" {
       }
     }
   }
+}
+
+moved {
+  from = kubernetes_config_map_v1.pgbouncer_config
+  to   = kubernetes_config_map_v1.pgbouncer_config[0]
+}
+
+moved {
+  from = kubernetes_deployment_v1.pgbouncer
+  to   = kubernetes_deployment_v1.pgbouncer[0]
+}
+
+moved {
+  from = kubernetes_service_v1.pgbouncer
+  to   = kubernetes_service_v1.pgbouncer[0]
+}
+
+moved {
+  from = kubernetes_pod_disruption_budget_v1.pgbouncer
+  to   = kubernetes_pod_disruption_budget_v1.pgbouncer[0]
 }

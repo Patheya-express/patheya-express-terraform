@@ -2,7 +2,10 @@ resource "aws_cloudwatch_log_group" "cluster" {
   # EKS creates this automatically on first log delivery if it doesn't already exist, but with no
   # retention/encryption configuration — creating it explicitly first means the very first log
   # line is already retention-bounded and KMS-encrypted, not delivered briefly-unmanaged before a
-  # later Terraform run catches up.
+  # later Terraform run catches up. create_cloudwatch_log_group = false when the caller owns it in
+  # a longer-lived layer instead, so destroying this cluster never deletes its audit history.
+  count = var.create_cloudwatch_log_group ? 1 : 0
+
   name              = "/aws/eks/${var.name_prefix}/cluster"
   retention_in_days = var.log_retention_days
   kms_key_id        = var.kms_key_arn
@@ -33,10 +36,26 @@ resource "aws_iam_role_policy_attachment" "cluster_policy" {
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
+moved {
+  from = aws_cloudwatch_log_group.cluster
+  to   = aws_cloudwatch_log_group.cluster[0]
+}
+
 resource "aws_eks_cluster" "this" {
   name     = var.name_prefix
   role_arn = aws_iam_role.cluster.arn
   version  = var.kubernetes_version
+
+  # false: EKS installs no unmanaged vpc-cni/kube-proxy/coredns at creation — var.managed_addons
+  # (addons.tf) installs them as EKS-managed add-ons instead. Changing this forces a new cluster.
+  bootstrap_self_managed_addons = var.bootstrap_self_managed_addons
+
+  dynamic "upgrade_policy" {
+    for_each = var.support_type == null ? [] : [var.support_type]
+    content {
+      support_type = upgrade_policy.value
+    }
+  }
 
   vpc_config {
     subnet_ids              = var.private_app_subnet_ids

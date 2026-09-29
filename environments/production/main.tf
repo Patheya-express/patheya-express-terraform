@@ -7,6 +7,16 @@ module "shared" {
   retention   = "365-days"
 }
 
+# Per-mode runtime capacity for this layer — explicit values, one row per mode, no derived math.
+# The three-AZ NAT topology itself (single_nat_gateway = false below) never varies by mode.
+locals {
+  runtime = {
+    idle  = { nat_gateways = false, tailscale_router = 0, github_runner = 0 }
+    build = { nat_gateways = true, tailscale_router = 1, github_runner = 1 }
+    live  = { nat_gateways = true, tailscale_router = 1, github_runner = 1 }
+  }[var.operating_mode]
+}
+
 module "iam" {
   source = "../../modules/iam"
 
@@ -36,6 +46,13 @@ module "kms" {
       description         = "Encrypts the Tailscale router's auth-key secret, the GitHub runner's PAT secret, and the runner's CloudWatch log group - see admin-connectivity.tf"
       additional_services = ["logs.amazonaws.com"]
     }
+    # Lives here, not in cluster/, so it outlives any one cluster: it encrypts the persistent EKS
+    # control-plane log group (eks-persistent.tf) and each cluster's Kubernetes Secrets envelope.
+    eks-secrets = {
+      description         = "Envelope-encrypts the Production EKS cluster's Kubernetes Secrets and its persistent control-plane log group - see eks-persistent.tf"
+      additional_services = ["eks.amazonaws.com", "logs.amazonaws.com"]
+      key_administrators  = [module.iam.terraform_role_arn]
+    }
   }
 }
 
@@ -52,7 +69,8 @@ module "vpc" {
   private_app_subnet_cidrs  = ["10.30.16.0/20", "10.30.32.0/20", "10.30.48.0/20"]
   private_data_subnet_cidrs = ["10.30.64.0/24", "10.30.65.0/24", "10.30.66.0/24"]
 
-  single_nat_gateway = false # one NAT Gateway per AZ — mandatory in production, cloud-architecture-blueprint.md Section 2
+  single_nat_gateway = false                      # one NAT Gateway per AZ — mandatory in production, cloud-architecture-blueprint.md Section 2
+  enable_nat_gateway = local.runtime.nat_gateways # off only in idle mode — nothing in private-app needs egress then
 }
 
 module "networking" {

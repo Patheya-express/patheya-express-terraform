@@ -154,7 +154,7 @@ resource "aws_launch_template" "this" {
   user_data = base64encode(<<-EOF
     #!/bin/bash
     set -euo pipefail
-    exec > >(tee /var/log/tailscale-setup.log | logger -t tailscale-setup -s) 2>&1
+    exec > /var/log/tailscale-setup.log 2>&1
 
     # Tailscale's own official installer - not a raw `dnf install`, which fails on AL2023's default
     # repos (they do not carry the tailscale package; this script adds Tailscale's own repo first,
@@ -206,9 +206,9 @@ resource "aws_autoscaling_group" "this" {
   # ap-south-1b/ap-south-1c as currently available - excluding the known-bad AZ outright rather
   # than relying on the ASG's own placement algorithm to route around it, which it wasn't doing.
   vpc_zone_identifier = slice(var.private_app_subnet_ids, 1, length(var.private_app_subnet_ids))
-  min_size            = 1
-  max_size            = 1
-  desired_capacity    = 1
+  min_size            = var.desired_capacity
+  max_size            = 1 # single self-healing instance by design (see the comment above the launch template) - 0 is "off", never more than 1
+  desired_capacity    = var.desired_capacity
 
   launch_template {
     id      = aws_launch_template.this.id
