@@ -34,7 +34,7 @@ jobs:
           hostname
 
       - name: 2/3. Assume the existing Terraform CI role via GitHub OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.TF_ROLE_ARN_PRODUCTION }}
           aws-region: ap-south-1
