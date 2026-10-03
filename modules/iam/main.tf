@@ -75,7 +75,10 @@ data "aws_iam_policy_document" "permission_boundary" {
       "ec2:*",
       "elasticloadbalancing:*",
       "eks:*",
-      "ecs:*", # Phase 2 (temporary DEV+QA on ECS Fargate, modules/ecs) — kept alongside eks:*, not in place of it; EKS remains the eventual Production compute target.
+      "ecs:*",                     # ECS Fargate — Production's runtime (ADR-004 as amended) and development-temp. eks:* stays for the Development/Staging EKS roots still in this repository.
+      "application-autoscaling:*", # ECS service autoscaling (modules/ecs autoscaling.tf)
+      "cloudfront:*",              # Production static web (modules/static-site)
+      "wafv2:*",                   # Production API edge (modules/waf)
       "rds:*",
       "elasticache:*",
       "backup:*",
@@ -102,6 +105,12 @@ data "aws_iam_policy_document" "permission_boundary" {
       "sso:*",
       "sso-directory:*",
       "identitystore:*",
+      # ECS Exec session channels only (modules/ecs enable_execute_command) — task roles are
+      # bounded by this policy, so without these the SSM agent inside a task cannot open a session.
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
     ]
     resources = ["*"]
   }
@@ -167,7 +176,23 @@ data "aws_iam_policy_document" "permission_boundary" {
         "rds.amazonaws.com",
         "backup.amazonaws.com",
         "spot.amazonaws.com",
+        "ecs.amazonaws.com",
+        "ecs.application-autoscaling.amazonaws.com",
+        "elasticloadbalancing.amazonaws.com",
       ]
+    }
+  }
+
+  # Cross-account role assumption, limited to exactly var.cross_account_assume_role_arns (Production:
+  # the shared-services role that manages Production's records in the apex Route53 zone). Absent
+  # when the list is empty — every other account's boundary is unchanged.
+  dynamic "statement" {
+    for_each = length(var.cross_account_assume_role_arns) > 0 ? [1] : []
+    content {
+      sid       = "AllowNamedCrossAccountRoleAssumption"
+      effect    = "Allow"
+      actions   = ["sts:AssumeRole"]
+      resources = var.cross_account_assume_role_arns
     }
   }
 

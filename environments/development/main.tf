@@ -47,12 +47,10 @@ module "kms" {
   }
 }
 
-module "route53" {
-  source = "../../modules/route53"
-
-  tags      = module.shared.tags
-  zone_name = "dev.patheyaexpress.com"
-}
+# No route53 module: the dev.patheyaexpress.com zone, its ACM certificate and validation record
+# were deleted on 2026-10-03 (approved development-temp/Development cleanup) — Development is not
+# AWS-hosted. The next plan of this root refreshes the three deleted resources out of state; it must
+# not recreate them.
 
 module "config" {
   source = "../../modules/config"

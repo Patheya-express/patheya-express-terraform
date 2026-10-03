@@ -57,6 +57,11 @@ module "ecr" {
   # rather than changing the module's own default, since this is the only environment that
   # populates real ECR content.
   repository_names = ["api-gateway", "customer-app", "restaurant-app", "delivery-app", "admin-app"]
+
+  # Production is the only AWS-hosted workload account (Development/QA/Staging run on non-AWS
+  # hosting), so pull is narrowed from organization-wide to Production alone. Production pulls
+  # only api-gateway: its web apps are served from S3/CloudFront, never as nginx containers.
+  pull_account_ids = [var.production_account_id]
 }
 
 # The apex zone — patheyaexpress.com itself. Every environment's own delegated subdomain zone
@@ -67,4 +72,9 @@ module "route53_apex" {
 
   tags      = module.shared.tags
   zone_name = "patheyaexpress.com"
+
+  # No wildcard certificate here: ACM certificates cannot be used across accounts, so it would have
+  # no consumer (Production's app layer requests its own), and its DNS validation would block this
+  # apply until the registrar delegates the domain to this zone.
+  create_wildcard_certificate = false
 }

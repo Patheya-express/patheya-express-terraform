@@ -32,7 +32,7 @@ variable "acm_certificate_arn" {
 }
 
 variable "price_class" {
-  description = "CloudFront price class. \"PriceClass_100\" (North America + Europe edge locations only) is the lowest-cost option — appropriate for a temporary DEV+QA audience, not a global production audience."
+  description = "CloudFront price class. \"PriceClass_100\" (North America + Europe edge locations only) is the lowest-cost option — appropriate for a temporary DEV+QA audience, not a global production audience. Production uses \"PriceClass_200\", the lowest class that includes India edge locations."
   type        = string
   default     = "PriceClass_100"
 }

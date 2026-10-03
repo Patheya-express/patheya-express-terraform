@@ -1,0 +1,5 @@
+# Required — the first release image tag (<semver>-<git-sha-short>) already published to the
+# shared-services api-gateway repository by backend-release.yml (and its "-migrate" sibling).
+# Only the initial task-definition revision uses it: after that, backend-deploy-ecs.yml owns the
+# running image (modules/ecs service_management_mode = "ci_autoscaled").
+# bootstrap_image_tag = "<semver>-<git-sha-short>"

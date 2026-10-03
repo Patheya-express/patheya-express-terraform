@@ -2,6 +2,10 @@ output "zone_id" {
   value = aws_route53_zone.this.zone_id
 }
 
+output "zone_arn" {
+  value = aws_route53_zone.this.arn
+}
+
 output "name_servers" {
   description = "For the apex zone: give these to the domain registrar. For a delegated subdomain zone: give these to the apex zone's owning environment to create the NS delegation record — see environments/shared-services/route53-delegation.tf."
   value       = aws_route53_zone.this.name_servers

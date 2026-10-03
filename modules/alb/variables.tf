@@ -15,7 +15,7 @@ variable "public_subnet_ids" {
 }
 
 variable "alb_security_group_id" {
-  description = "From module.networking's alb_security_group_id output (create_ecs_topology_security_groups = true) — already restricted to Cloudflare's published IP ranges on 443."
+  description = "From module.networking's alb_security_group_id output (create_ecs_topology_security_groups = true) — restricted to var.alb_allowed_cidrs on 443 (Cloudflare ranges, or 0.0.0.0/0 for a public WAF-protected ALB)."
   type        = string
 }
 
@@ -72,6 +72,28 @@ variable "enable_deletion_protection" {
   description = "false is appropriate ONLY for a temporary, intentionally-destroyable environment."
   type        = bool
   default     = false
+}
+
+variable "access_logs_enabled" {
+  description = "Creates a dedicated, private access-log bucket and enables ALB access logging into it. false (default) — development-temp's existing shape."
+  type        = bool
+  default     = false
+}
+
+variable "access_logs_prefix" {
+  type    = string
+  default = "alb"
+}
+
+variable "access_logs_retention_days" {
+  type    = number
+  default = 90
+}
+
+variable "web_acl_arn" {
+  description = "Regional AWS WAFv2 web ACL to associate with this ALB (modules/waf). null (default) associates none."
+  type        = string
+  default     = null
 }
 
 variable "alarm_sns_topic_arn" {

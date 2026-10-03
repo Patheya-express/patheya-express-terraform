@@ -114,3 +114,51 @@ variable "frontend_ecr_repository_arns" {
   type        = list(string)
   default     = []
 }
+
+variable "cross_account_assume_role_arns" {
+  description = "Role ARNs in other accounts that the Terraform CI role (and the permission boundary) may sts:AssumeRole into. Empty (default) grants none. Production: the shared-services role managing Production's apex-zone DNS records."
+  type        = list(string)
+  default     = []
+}
+
+variable "ecs_deploy" {
+  description = <<-EOT
+    Production backend ECS deploy role (github-actions-ci-roles.tf). null (default) creates
+    nothing. Names rather than resource references, because the root layer that calls this module
+    is applied before the app layer that creates the ECS resources; the app layer asserts (check
+    block) that what it creates matches these names.
+      github_environment       — GitHub Environment whose jobs may assume the role.
+      cluster_name             — ECS cluster.
+      service_names            — services the role may update.
+      migration_task_family    — the one task family the role may run.
+      migration_log_group_name — log group the role may read migration output from.
+      pass_role_names          — ECS execution/task roles the role may pass to ecs-tasks.
+      image_repository_arn     — shared-services ECR repository (read-only).
+  EOT
+  type = object({
+    github_environment       = string
+    cluster_name             = string
+    service_names            = list(string)
+    migration_task_family    = string
+    migration_log_group_name = string
+    pass_role_names          = list(string)
+    image_repository_arn     = string
+  })
+  default = null
+}
+
+variable "static_site_deploy" {
+  description = <<-EOT
+    Production frontend static-web deploy role (github-actions-ci-roles.tf). null (default)
+    creates nothing.
+      github_environment — GitHub Environment whose jobs may assume the role.
+      bucket_names       — modules/static-site bucket names the role may sync.
+      environment_tag    — Environment tag value the CloudFront distributions carry.
+  EOT
+  type = object({
+    github_environment = string
+    bucket_names       = list(string)
+    environment_tag    = string
+  })
+  default = null
+}

@@ -1,16 +1,34 @@
 data "aws_partition" "current" {}
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 locals {
   api_image       = "${var.image_repository_url}:${var.image_tag}"
   worker_image    = local.api_image # same image, different container command — never a separate image/repository
   migration_image = "${var.image_repository_url}:${var.image_tag}${var.migration_image_tag_suffix}"
 
-  # Every secret ARN any container in this module might reference — the execution role needs
-  # secretsmanager:GetSecretValue on exactly this set (and nothing else) to resolve ECS `secrets`
-  # at container launch. Deduplicated via a set conversion since database_url_secret_arn and
-  # app_secrets could theoretically overlap.
-  all_referenced_secret_arns = distinct(concat([var.database_url_secret_arn], values(var.app_secrets)))
+  ci_managed = var.service_management_mode == "ci_autoscaled"
+
+  migration_database_url_secret_arn = coalesce(var.migration_database_url_secret_arn, var.database_url_secret_arn)
+
+  # ECS `secrets` valueFrom may carry a JSON-key suffix (`<secret-arn>:<json-key>::`), but IAM
+  # matches the secret's own ARN — the first seven colon-separated fields
+  # (arn:partition:secretsmanager:region:account:secret:name-suffix). Normalizing here keeps the
+  # execution role scoped to exactly the referenced secrets while accepting either form.
+  all_referenced_secret_arns = distinct([
+    for ref in concat(
+      [var.database_url_secret_arn, local.migration_database_url_secret_arn],
+      values(var.app_secrets),
+    ) : join(":", slice(split(":", ref), 0, 7))
+  ])
+
+  secrets_kms_key_arns = distinct(concat([var.kms_key_arn], var.secrets_kms_key_arns))
+
+  # The shared-services ECR repository when images are pulled cross-account (Production); this
+  # account's own repositories otherwise (development-temp's original, unchanged scope).
+  ecr_pull_resources = var.image_repository_arn != null ? [var.image_repository_arn] : [
+    "arn:${data.aws_partition.current.partition}:ecr:*:${data.aws_caller_identity.current.account_id}:repository/*",
+  ]
 
   api_worker_secrets = concat(
     [{ name = "DATABASE_URL", valueFrom = var.database_url_secret_arn }],
@@ -18,6 +36,25 @@ locals {
   )
 
   api_worker_environment = [for k, v in var.app_environment : { name = k, value = v }]
+
+  # Fargate has no tmpfs support — each writable path is an ephemeral task-storage bind mount
+  # (a `volume` with no host path) instead. Empty by default, as is every hardening key below:
+  # the merged container definitions are byte-identical to the original module output unless a
+  # caller opts in, so existing callers see no task-definition replacement.
+  writable_volumes = { for idx, path in var.writable_container_paths : "writable-${idx}" => path }
+
+  container_hardening = merge(
+    var.readonly_root_filesystem ? { readonlyRootFilesystem = true } : {},
+    length(local.writable_volumes) > 0 ? {
+      mountPoints = [for name, path in local.writable_volumes : { sourceVolume = name, containerPath = path, readOnly = false }]
+    } : {},
+    var.stop_timeout_seconds != null ? { stopTimeout = var.stop_timeout_seconds } : {},
+    # ECS Exec's SSM agent runs inside the task; an init process reaps its child processes.
+    var.enable_execute_command ? { linuxParameters = { initProcessEnabled = true } } : {},
+  )
+
+  api_service_name    = "${var.name_prefix}-api"
+  worker_service_name = "${var.name_prefix}-worker"
 }
 
 resource "aws_ecs_cluster" "this" {
@@ -25,7 +62,7 @@ resource "aws_ecs_cluster" "this" {
 
   setting {
     name  = "containerInsights"
-    value = "disabled" # deliberately minimal observability for temporary DEV+QA (Phase 1 §14) — not overbuilding for a scale that doesn't need it
+    value = var.container_insights
   }
 
   tags = merge(var.tags, { Application = "ecs", Purpose = "ecs-cluster" })
@@ -100,7 +137,7 @@ data "aws_iam_policy_document" "execution" {
       "ecr:GetDownloadUrlForLayer",
       "ecr:BatchGetImage",
     ]
-    resources = ["arn:${data.aws_partition.current.partition}:ecr:*:${data.aws_caller_identity.current.account_id}:repository/*"]
+    resources = local.ecr_pull_resources
   }
 
   statement {
@@ -128,7 +165,7 @@ data "aws_iam_policy_document" "execution" {
     sid       = "DecryptTaskDefinitionSecrets"
     effect    = "Allow"
     actions   = ["kms:Decrypt"]
-    resources = [var.kms_key_arn]
+    resources = local.secrets_kms_key_arns
   }
 }
 
@@ -142,10 +179,10 @@ resource "aws_iam_role_policy" "execution" {
 # The application makes no direct AWS API calls at runtime today (storage is Cloudinary, not S3;
 # no other AWS SDK usage found in apps/api-gateway/src) — these roles exist because ECS requires a
 # task role and are bounded by the same account permission boundary as every other Terraform-
-# managed role, but deliberately carry NO inline policy: an IAM role with only an assume-role
-# policy and a permissions boundary already grants zero permissions, which is exactly the correct,
-# auditable state today. A policy is added here only when the application genuinely needs one —
-# not invented ahead of need.
+# managed role, but carry NO business permissions: an IAM role with only an assume-role policy
+# and a permissions boundary already grants zero permissions. The one exception is ECS Exec
+# (var.enable_execute_command), whose SSM agent channel runs under the task role — that, and
+# nothing else, is added below when enabled.
 
 data "aws_iam_policy_document" "task_assume" {
   statement {
@@ -182,7 +219,40 @@ resource "aws_iam_role" "migration_task" {
   tags = merge(var.tags, { Application = "ecs", Purpose = "migration-task-role" })
 }
 
-# --- API task definition + service --------------------------------------------------------------
+# ECS Exec — the SSM Session Manager message channels only (AWS-documented minimum; these actions
+# have no resource-level scoping). Access to *start* a session is governed separately by the
+# human's own ecs:ExecuteCommand permission, not by this role.
+data "aws_iam_policy_document" "ecs_exec" {
+  statement {
+    sid    = "EcsExecSessionChannels"
+    effect = "Allow"
+    actions = [
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "api_task_ecs_exec" {
+  count = var.enable_execute_command ? 1 : 0
+
+  name   = "${var.name_prefix}-ecs-api-task-exec-policy"
+  role   = aws_iam_role.api_task.id
+  policy = data.aws_iam_policy_document.ecs_exec.json
+}
+
+resource "aws_iam_role_policy" "worker_task_ecs_exec" {
+  count = var.enable_execute_command ? 1 : 0
+
+  name   = "${var.name_prefix}-ecs-worker-task-exec-policy"
+  role   = aws_iam_role.worker_task.id
+  policy = data.aws_iam_policy_document.ecs_exec.json
+}
+
+# --- API task definition ----------------------------------------------------------------------------
 
 resource "aws_ecs_task_definition" "api" {
   family                   = "${var.name_prefix}-api"
@@ -193,8 +263,15 @@ resource "aws_ecs_task_definition" "api" {
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.api_task.arn
 
+  dynamic "volume" {
+    for_each = local.writable_volumes
+    content {
+      name = volume.key
+    }
+  }
+
   container_definitions = jsonencode([
-    {
+    merge({
       name      = "api"
       image     = local.api_image
       essential = true
@@ -219,49 +296,13 @@ resource "aws_ecs_task_definition" "api" {
           "awslogs-stream-prefix" = "api"
         }
       }
-    }
+    }, local.container_hardening)
   ])
 
   tags = merge(var.tags, { Application = "ecs", Purpose = "api-task-definition" })
 }
 
-data "aws_region" "current" {}
-
-resource "aws_ecs_service" "api" {
-  name            = "${var.name_prefix}-api"
-  cluster         = aws_ecs_cluster.this.id
-  task_definition = aws_ecs_task_definition.api.arn
-  desired_count   = var.api_desired_count
-  launch_type     = "FARGATE"
-
-  deployment_minimum_healthy_percent = 100
-  deployment_maximum_percent         = 200
-
-  deployment_circuit_breaker {
-    enable   = true
-    rollback = true
-  }
-
-  network_configuration {
-    subnets          = var.private_app_subnet_ids
-    security_groups  = [var.ecs_task_security_group_id]
-    assign_public_ip = false
-  }
-
-  load_balancer {
-    target_group_arn = var.alb_target_group_arn
-    container_name   = "api"
-    container_port   = var.api_container_port
-  }
-
-  # No sticky sessions configured anywhere in this module or module.alb — safe because the
-  # application's Socket.IO Redis adapter already fans events out across instances (confirmed:
-  # apps/api-gateway/src/modules/realtime/gateways/realtime.gateway.ts's afterInit()).
-
-  tags = merge(var.tags, { Application = "ecs", Purpose = "api-service" })
-}
-
-# --- Worker task definition + service (no ALB target) ---------------------------------------------
+# --- Worker task definition (no ALB target) --------------------------------------------------------
 
 resource "aws_ecs_task_definition" "worker" {
   family                   = "${var.name_prefix}-worker"
@@ -272,8 +313,15 @@ resource "aws_ecs_task_definition" "worker" {
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.worker_task.arn
 
+  dynamic "volume" {
+    for_each = local.writable_volumes
+    content {
+      name = volume.key
+    }
+  }
+
   container_definitions = jsonencode([
-    {
+    merge({
       name        = "worker"
       image       = local.worker_image
       essential   = true
@@ -297,21 +345,117 @@ resource "aws_ecs_task_definition" "worker" {
           "awslogs-stream-prefix" = "worker"
         }
       }
-    }
+    }, local.container_hardening)
   ])
 
   tags = merge(var.tags, { Application = "ecs", Purpose = "worker-task-definition" })
 }
 
-resource "aws_ecs_service" "worker" {
-  name            = "${var.name_prefix}-worker"
-  cluster         = aws_ecs_cluster.this.id
-  task_definition = aws_ecs_task_definition.worker.arn
-  desired_count   = var.worker_desired_count
-  launch_type     = "FARGATE"
+# --- Services --------------------------------------------------------------------------------------
+# Two mutually exclusive variants per service, selected by var.service_management_mode, because
+# Terraform `lifecycle.ignore_changes` cannot be conditional:
+#
+#   "terraform"     (aws_ecs_service.api / .worker) — Terraform owns the task definition revision
+#                   (image tag via var.image_tag) and desired_count. development-temp's original
+#                   model, unchanged (moved blocks below make the count gating a pure state move).
+#   "ci_autoscaled" (aws_ecs_service.api_ci_managed / .worker_ci_managed) — CI owns the task
+#                   definition revision (backend-deploy-ecs.yml registers a new revision per
+#                   release and updates the service); Application Auto Scaling owns desired_count
+#                   within Terraform-owned min/max (autoscaling.tf). Terraform still owns every
+#                   other service and task-definition setting.
+#
+# The two variants' bodies are otherwise identical — keep them in sync.
 
-  deployment_minimum_healthy_percent = 100
-  deployment_maximum_percent         = 200
+resource "aws_ecs_service" "api" {
+  count = local.ci_managed ? 0 : 1
+
+  name                              = local.api_service_name
+  cluster                           = aws_ecs_cluster.this.id
+  task_definition                   = aws_ecs_task_definition.api.arn
+  desired_count                     = var.api_desired_count
+  launch_type                       = "FARGATE"
+  enable_execute_command            = var.enable_execute_command
+  health_check_grace_period_seconds = var.api_health_check_grace_period_seconds
+
+  deployment_minimum_healthy_percent = var.deployment_minimum_healthy_percent
+  deployment_maximum_percent         = var.deployment_maximum_percent
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  network_configuration {
+    subnets          = var.private_app_subnet_ids
+    security_groups  = [var.ecs_task_security_group_id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = var.alb_target_group_arn
+    container_name   = "api"
+    container_port   = var.api_container_port
+  }
+
+  # No sticky sessions configured anywhere in this module or module.alb — safe because the
+  # application's Socket.IO Redis adapter already fans events out across instances (confirmed:
+  # apps/api-gateway/src/modules/realtime/gateways/realtime.gateway.ts's afterInit()), and every
+  # client connects websocket-only (frontend realtime-socket.service.ts: transports ['websocket']).
+
+  tags = merge(var.tags, { Application = "ecs", Purpose = "api-service" })
+}
+
+resource "aws_ecs_service" "api_ci_managed" {
+  count = local.ci_managed ? 1 : 0
+
+  name                              = local.api_service_name
+  cluster                           = aws_ecs_cluster.this.id
+  task_definition                   = aws_ecs_task_definition.api.arn # initial revision only — see ignore_changes
+  desired_count                     = var.api_min_capacity            # initial value only — Application Auto Scaling owns it afterwards
+  launch_type                       = "FARGATE"
+  enable_execute_command            = var.enable_execute_command
+  health_check_grace_period_seconds = var.api_health_check_grace_period_seconds
+
+  deployment_minimum_healthy_percent = var.deployment_minimum_healthy_percent
+  deployment_maximum_percent         = var.deployment_maximum_percent
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  network_configuration {
+    subnets          = var.private_app_subnet_ids
+    security_groups  = [var.ecs_task_security_group_id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = var.alb_target_group_arn
+    container_name   = "api"
+    container_port   = var.api_container_port
+  }
+
+  tags = merge(var.tags, { Application = "ecs", Purpose = "api-service" })
+
+  lifecycle {
+    # CI owns the running image revision; Application Auto Scaling owns the task count.
+    ignore_changes = [task_definition, desired_count]
+  }
+}
+
+resource "aws_ecs_service" "worker" {
+  count = local.ci_managed ? 0 : 1
+
+  name                   = local.worker_service_name
+  cluster                = aws_ecs_cluster.this.id
+  task_definition        = aws_ecs_task_definition.worker.arn
+  desired_count          = var.worker_desired_count
+  launch_type            = "FARGATE"
+  enable_execute_command = var.enable_execute_command
+
+  deployment_minimum_healthy_percent = var.deployment_minimum_healthy_percent
+  deployment_maximum_percent         = var.deployment_maximum_percent
 
   deployment_circuit_breaker {
     enable   = true
@@ -327,10 +471,59 @@ resource "aws_ecs_service" "worker" {
   tags = merge(var.tags, { Application = "ecs", Purpose = "worker-service" })
 }
 
+resource "aws_ecs_service" "worker_ci_managed" {
+  count = local.ci_managed ? 1 : 0
+
+  name                   = local.worker_service_name
+  cluster                = aws_ecs_cluster.this.id
+  task_definition        = aws_ecs_task_definition.worker.arn # initial revision only — see ignore_changes
+  desired_count          = var.worker_min_capacity            # initial value only — Application Auto Scaling owns it afterwards
+  launch_type            = "FARGATE"
+  enable_execute_command = var.enable_execute_command
+
+  deployment_minimum_healthy_percent = var.deployment_minimum_healthy_percent
+  deployment_maximum_percent         = var.deployment_maximum_percent
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  network_configuration {
+    subnets          = var.private_app_subnet_ids
+    security_groups  = [var.ecs_task_security_group_id]
+    assign_public_ip = false
+  }
+
+  tags = merge(var.tags, { Application = "ecs", Purpose = "worker-service" })
+
+  lifecycle {
+    # CI owns the running image revision; Application Auto Scaling owns the task count.
+    ignore_changes = [task_definition, desired_count]
+  }
+}
+
+moved {
+  from = aws_ecs_service.api
+  to   = aws_ecs_service.api[0]
+}
+
+moved {
+  from = aws_ecs_service.worker
+  to   = aws_ecs_service.worker[0]
+}
+
+locals {
+  api_service    = local.ci_managed ? aws_ecs_service.api_ci_managed[0] : aws_ecs_service.api[0]
+  worker_service = local.ci_managed ? aws_ecs_service.worker_ci_managed[0] : aws_ecs_service.worker[0]
+}
+
 # --- Migration task definition (one-off; no service, ever) -----------------------------------------
 # Reuses the backend Dockerfile's own `migrate` build stage image
 # (ENTRYPOINT ["node_modules/.bin/prisma"] CMD ["migrate","deploy"]) — no new migration mechanism
 # invented here. Run via `aws ecs run-task`, from CI or manually, never as a long-running service.
+# Its DATABASE_URL is var.migration_database_url_secret_arn when set (Production: the migrator
+# user, direct to the Aurora writer) — never the runtime application credential.
 
 resource "aws_ecs_task_definition" "migration" {
   family                   = "${var.name_prefix}-migration"
@@ -349,7 +542,7 @@ resource "aws_ecs_task_definition" "migration" {
       # No command/entryPoint override — the -migrate image's own ENTRYPOINT/CMD
       # (prisma migrate deploy) runs unmodified.
       secrets = [
-        { name = "DATABASE_URL", valueFrom = var.database_url_secret_arn }
+        { name = "DATABASE_URL", valueFrom = local.migration_database_url_secret_arn }
       ]
       logConfiguration = {
         logDriver = "awslogs"

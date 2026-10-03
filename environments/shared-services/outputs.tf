@@ -18,3 +18,12 @@ output "apex_certificate_arn" {
 output "terraform_role_arn" {
   value = module.iam.terraform_role_arn
 }
+
+output "ecr_repository_arns" {
+  value = module.ecr.repository_arns
+}
+
+output "production_dns_role_arn" {
+  description = "Assumed by environments/production/app (and allow-listed in Production's Terraform role) to manage Production's apex-zone records."
+  value       = aws_iam_role.production_dns.arn
+}

@@ -77,6 +77,10 @@ data "aws_iam_policy_document" "terraform_role_permissions" {
       "ec2:*",
       "elasticloadbalancing:*",
       "eks:*",
+      "ecs:*",                     # ECS Fargate — Production runtime and development-temp; was missing here although the permission boundary already allowed it
+      "application-autoscaling:*", # ECS service autoscaling (modules/ecs autoscaling.tf)
+      "cloudfront:*",              # Production static web (modules/static-site)
+      "wafv2:*",                   # Production API edge (modules/waf)
       "rds:*",
       "elasticache:*",
       "backup:*",
@@ -194,7 +198,22 @@ data "aws_iam_policy_document" "terraform_role_permissions" {
         "rds.amazonaws.com",
         "backup.amazonaws.com",
         "spot.amazonaws.com",
+        "ecs.amazonaws.com",
+        "ecs.application-autoscaling.amazonaws.com",
+        "elasticloadbalancing.amazonaws.com",
       ]
+    }
+  }
+
+  # Plans/applies that write DNS records into another account's zone (Production's app layer ->
+  # the shared-services apex zone) assume exactly these roles, nothing else.
+  dynamic "statement" {
+    for_each = length(var.cross_account_assume_role_arns) > 0 ? [1] : []
+    content {
+      sid       = "AssumeNamedCrossAccountRoles"
+      effect    = "Allow"
+      actions   = ["sts:AssumeRole"]
+      resources = var.cross_account_assume_role_arns
     }
   }
 

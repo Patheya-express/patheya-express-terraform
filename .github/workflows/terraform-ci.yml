@@ -77,7 +77,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        stage: ["", "cluster", "data", "platform"]
+        # ECS Fargate layers (ADR-004 as amended) — cluster/ and platform/ (EKS) are retired.
+        stage: ["", "data", "app"]
     uses: Patheya-express/patheya-express-platform/.github/workflows/reusable-terraform-plan.yml@main
     with:
       working-directory: environments/production${{ matrix.stage != '' && format('/{0}', matrix.stage) || '' }}
