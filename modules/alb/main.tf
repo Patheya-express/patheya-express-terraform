@@ -142,10 +142,19 @@ resource "aws_s3_bucket_policy" "access_logs" {
 # --- AWS WAF (var.web_acl_arn) ------------------------------------------------------------------------
 
 resource "aws_wafv2_web_acl_association" "this" {
-  count = var.web_acl_arn != null ? 1 : 0
+  # Gated on the plan-time-known flag, not on web_acl_arn: the ARN is unknown at plan time when the
+  # web ACL is created in the same apply, which Terraform cannot use in count.
+  count = var.web_acl_enabled ? 1 : 0
 
   resource_arn = aws_lb.this.arn
   web_acl_arn  = var.web_acl_arn
+
+  lifecycle {
+    precondition {
+      condition     = var.web_acl_arn != null
+      error_message = "web_acl_enabled is true but web_acl_arn is null."
+    }
+  }
 }
 
 resource "aws_lb_target_group" "api" {

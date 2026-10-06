@@ -90,8 +90,14 @@ variable "access_logs_retention_days" {
   default = 90
 }
 
+variable "web_acl_enabled" {
+  description = "Associates var.web_acl_arn with this ALB. A separate, plan-time-known flag because the ARN is unknown at plan time when the web ACL is created in the same apply. false (default) associates none."
+  type        = bool
+  default     = false
+}
+
 variable "web_acl_arn" {
-  description = "Regional AWS WAFv2 web ACL to associate with this ALB (modules/waf). null (default) associates none."
+  description = "Regional AWS WAFv2 web ACL (modules/waf) to associate when web_acl_enabled is true."
   type        = string
   default     = null
 }

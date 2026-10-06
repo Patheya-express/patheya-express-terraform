@@ -79,6 +79,7 @@ module "alb" {
   # HTTP -> HTTPS redirect, no stickiness (Redis adapter + websocket-only clients).
   enable_deletion_protection = true
   access_logs_enabled        = true
+  web_acl_enabled            = true
   web_acl_arn                = module.waf.web_acl_arn
 
   alarm_sns_topic_arn = module.alerting.topic_arn
