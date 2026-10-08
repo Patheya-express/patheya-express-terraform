@@ -3,6 +3,22 @@ variable "aws_region" {
   default = "ap-south-1"
 }
 
+variable "api_rate_limit_max" {
+  description = <<-EOT
+    API global rate limit — requests per 60 s per client IP (RATE_LIMIT_MAX). Deliberately no
+    default; set in the committed rate-limit.auto.tfvars so the active value is a reviewed Git
+    change. 100 is normal production. A higher value is ONLY a temporary load-test override and
+    must be reverted to 100 afterwards (patheya-express-platform loadtest/k6/README.md). Takes
+    effect on the next backend-deploy-ecs.yml run, which renders from the latest task definition.
+  EOT
+  type        = number
+
+  validation {
+    condition     = var.api_rate_limit_max == floor(var.api_rate_limit_max) && var.api_rate_limit_max >= 1 && var.api_rate_limit_max <= 100000
+    error_message = "api_rate_limit_max must be an integer between 1 and 100000 (the application's accepted range)."
+  }
+}
+
 variable "operating_mode" {
   description = <<-EOT
     Production lifecycle state for the application runtime — idle | build | live

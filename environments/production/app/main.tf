@@ -128,6 +128,9 @@ locals {
     REDIS_HOST            = local.data.redis_primary_endpoint
     REDIS_PORT            = tostring(local.data.redis_port)
     REDIS_TLS             = "true"
+    # Global per-client-IP requests per 60 s (api-gateway rate-limit.config.ts). 100 is normal
+    # production; anything else is a temporary load-test override — see rate-limit.auto.tfvars.
+    RATE_LIMIT_MAX = tostring(var.api_rate_limit_max)
   }
 }
 
