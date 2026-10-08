@@ -118,17 +118,20 @@ module "aurora" {
   aurora_security_group_id = local.aurora_cluster_security_group_id # carries the RDS service-linked-role ordering (database-access.tf)
   kms_key_arn              = module.kms.key_arns["aurora"]
 
-  engine_version        = "16.15" # PostgreSQL 16 (aurora-postgresql16 family); the module default 16.4 is no longer offered in ap-south-1
-  serverless            = false   # provisioned db.r6g instances (cloud-architecture-blueprint.md Section 5's production row)
-  instance_class_writer = "db.r6g.xlarge"
+  engine_version = "16.15" # PostgreSQL 16 (aurora-postgresql16 family); the module default 16.4 is no longer offered in ap-south-1
+  serverless     = false   # provisioned db.r6g instances (cloud-architecture-blueprint.md Section 5's production row)
+  # Pre-launch cost optimization (2026-10-08): no reader serves application traffic (RDS Proxy has
+  # only its default READ_WRITE endpoint and the app uses one DATABASE_URL), so writer only.
+  # Re-add readers (reader_count) and size the writer back up before production traffic.
+  instance_class_writer = "db.r6g.large"
   instance_class_reader = "db.r6g.large"
-  reader_count          = 2 # "1 writer + 2 readers, one per AZ"
+  reader_count          = 0
   deletion_protection   = true
   apply_immediately     = false
 
-  backup_retention_days               = 35  # Aurora's maximum, production only
-  performance_insights_retention_days = 731 # paid tier — real incident-postmortem lookback
-  monitoring_interval_seconds         = 15  # finest Enhanced Monitoring granularity
+  backup_retention_days               = 35 # Aurora's maximum, production only
+  performance_insights_retention_days = 7  # free tier while pre-launch; 731 (paid) for real incident-postmortem lookback once live
+  monitoring_interval_seconds         = 15 # finest Enhanced Monitoring granularity
 
   alarm_sns_topic_arn = module.alerting.topic_arn
   dr_backup_vault_arn = module.aurora_backup_vault_dr.arn
@@ -147,12 +150,13 @@ module "elasticache" {
   auth_token              = module.secrets_manager.redis_auth_token
 
   # Cluster mode DISABLED: the application's ioredis client (and therefore BullMQ and the Socket.IO
-  # Redis adapter) is not cluster-aware — apps/api-gateway/src/infrastructure/redis. One primary +
-  # one replica, Multi-AZ automatic failover; the client reconnects on READONLY during promotion.
+  # Redis adapter) is not cluster-aware — apps/api-gateway/src/infrastructure/redis. Pre-launch
+  # cost optimization (2026-10-08): primary only, so no replica and no Multi-AZ automatic failover
+  # (the module disables both when replicas_per_shard = 0). Set back to 1 before production traffic.
   # TLS in transit and the AUTH token are always on (modules/elasticache).
   node_type            = "cache.r6g.large"
   cluster_mode_enabled = false
-  replicas_per_shard   = 1
+  replicas_per_shard   = 0
 
   snapshot_retention_days = 7
   apply_immediately       = false

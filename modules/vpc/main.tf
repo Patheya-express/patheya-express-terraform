@@ -76,6 +76,23 @@ locals {
   nat_gateway_count = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : 3) : 0
 }
 
+# Safe ordering for NAT topology changes (single_nat_gateway / enable_nat_gateway flips). On
+# 2026-10-08 a 3 -> 1 change destroyed NAT Gateways before the private-app routes that used them
+# were re-pointed: Terraform only guarantees "update dependents before destroying a dependency"
+# for create_before_destroy resources, so the route updates and NAT destroys ran in parallel and
+# two AZs lost egress. The chain below makes the order explicit:
+#
+#   create:  EIP -> time_sleep -> NAT Gateway -> private-app routes
+#   destroy: private-app routes re-pointed/removed -> NAT Gateway -> wait -> EIP released
+#
+# create_before_destroy on EIP, time_sleep and NAT Gateway defers every NAT/EIP destroy until all
+# dependent routes have been updated to their new target. The time_sleep's destroy_duration holds
+# the EIP release until the deleted NAT Gateway's network interface is gone (ReleaseAddress
+# otherwise fails with InvalidNetworkInterfaceID.NotFound, as it did on 2026-10-08).
+#
+# Limitation: a NAT Gateway cannot be replaced in place (e.g. a subnet_id change) while keeping its
+# EIP, since create_before_destroy needs the EIP free for the new gateway. Change topology through
+# single_nat_gateway / enable_nat_gateway, which add/remove EIP+NAT pairs together.
 resource "aws_eip" "nat" {
   count = local.nat_gateway_count
 
@@ -86,12 +103,32 @@ resource "aws_eip" "nat" {
     Application = "vpc"
     Purpose     = "nat-gateway-eip"
   })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "time_sleep" "nat_eip_release" {
+  count = local.nat_gateway_count
+
+  triggers = {
+    allocation_id = aws_eip.nat[count.index].id
+  }
+
+  destroy_duration = "120s"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_nat_gateway" "this" {
   count = local.nat_gateway_count
 
-  allocation_id = aws_eip.nat[count.index].id
+  # Through time_sleep (same value as aws_eip.nat[count.index].id) so the NAT Gateway is destroyed
+  # before the wait, and the EIP is released only after it.
+  allocation_id = time_sleep.nat_eip_release[count.index].triggers["allocation_id"]
   subnet_id     = aws_subnet.public[count.index].id
 
   tags = merge(var.tags, {
@@ -101,6 +138,10 @@ resource "aws_nat_gateway" "this" {
   })
 
   depends_on = [aws_internet_gateway.this]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # --- Route tables ---------------------------------------------------------------------------------
@@ -149,6 +190,10 @@ resource "aws_route" "private_app_nat" {
   route_table_id         = aws_route_table.private_app[count.index].id
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = var.single_nat_gateway ? aws_nat_gateway.this[0].id : aws_nat_gateway.this[count.index].id
+
+  # Explicit (not only via the reference above, which names a single instance): every NAT Gateway
+  # instance's destroy waits on these route updates — see the NAT section's ordering comment.
+  depends_on = [aws_nat_gateway.this]
 }
 
 resource "aws_route_table_association" "private_app" {
