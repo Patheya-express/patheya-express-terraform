@@ -33,7 +33,7 @@ module "kms" {
   keys = {
     cloudtrail-logs = {
       description         = "Encrypts the organization CloudTrail log archive, this account's own Config snapshots, and its security-findings SNS topic"
-      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "sns.amazonaws.com"]
+      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "sns.amazonaws.com", "events.amazonaws.com"]
       key_administrators  = [module.iam.terraform_role_arn]
     }
   }

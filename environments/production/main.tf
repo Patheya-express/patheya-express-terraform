@@ -100,7 +100,7 @@ module "kms" {
   keys = {
     cloudtrail-logs = {
       description         = "Encrypts this account's VPC Flow Logs, Config snapshots, and its security-findings SNS topic"
-      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "delivery.logs.amazonaws.com", "sns.amazonaws.com"]
+      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "delivery.logs.amazonaws.com", "sns.amazonaws.com", "events.amazonaws.com"]
     }
     admin-connectivity = {
       description         = "Encrypts the Tailscale router's auth-key secret, the GitHub runner's PAT secret, and the runner's CloudWatch log group - see admin-connectivity.tf"
