@@ -85,3 +85,9 @@ variable "shared_services_account_id" {
     error_message = "shared_services_account_id must be a 12-digit AWS account ID."
   }
 }
+
+variable "alert_email_subscriptions" {
+  description = "Email addresses to subscribe to this layer's application alarms topic (ECS running tasks, ALB, autoscaling-adjacent alarms). Defaults to empty; populate via terraform.tfvars with a real, verified address — this repository does not invent one."
+  type        = list(string)
+  default     = []
+}

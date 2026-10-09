@@ -151,8 +151,8 @@ module "kms" {
   }
 }
 
-# No subscriptions are created here (email_subscriptions left empty) — on-call routing is attached
-# out-of-band once a real distribution list exists, exactly like the data layer's topic.
+# Email subscriptions come from alert_email_subscriptions (git-ignored terraform.tfvars), like the
+# data layer's topic; AWS emails each address a confirmation link before delivering anything.
 module "alerting" {
   source = "../../../modules/alerting"
 
@@ -160,6 +160,8 @@ module "alerting" {
   name_prefix = module.shared.name_prefix
   kms_key_arn = module.kms.key_arns["application"]
   topic_name  = "alerts-application"
+
+  email_subscriptions = var.alert_email_subscriptions
 }
 
 # --- ECS ---------------------------------------------------------------------------------------------
