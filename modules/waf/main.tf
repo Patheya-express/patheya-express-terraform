@@ -8,6 +8,7 @@
 # overridden to COUNT, so tuning is a variable change, never a code change.
 
 resource "aws_wafv2_web_acl" "this" {
+  # checkov:skip=CKV_AWS_192:Rules come from var.managed_rule_groups (dynamic); Production passes AWSManagedRulesKnownBadInputsRuleSet (Log4j). Checkov cannot evaluate the dynamic block.
   name        = "${var.name_prefix}-${var.name_suffix}"
   description = var.description
   scope       = "REGIONAL"
@@ -73,6 +74,7 @@ resource "aws_wafv2_web_acl" "this" {
 # and cookies are redacted — request logs must never become a credential store.
 
 resource "aws_cloudwatch_log_group" "this" {
+  # checkov:skip=CKV_AWS_338:Retention is var.log_retention_days, a per-environment cost decision (docs/ci-baseline.md).
   count = var.logging_enabled ? 1 : 0
 
   name              = "aws-waf-logs-${var.name_prefix}-${var.name_suffix}"
