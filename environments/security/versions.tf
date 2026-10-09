@@ -11,4 +11,6 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+  # Four-account policy guard: Terraform refuses to run if the credentials resolve to any other account.
+  allowed_account_ids = ["512206886196"]
 }
