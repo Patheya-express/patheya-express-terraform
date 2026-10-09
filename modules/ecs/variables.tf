@@ -259,6 +259,35 @@ variable "autoscaling_cpu_target_percent" {
   default     = 60
 }
 
+variable "api_autoscaling_cpu_target_percent" {
+  description = "API CPU target-tracking goal. null (default) uses autoscaling_cpu_target_percent."
+  type        = number
+  default     = null
+}
+
+variable "worker_autoscaling_cpu_target_percent" {
+  description = "Worker CPU target-tracking goal. null (default) uses autoscaling_cpu_target_percent."
+  type        = number
+  default     = null
+}
+
+variable "api_alb_request_count_target" {
+  description = "ALBRequestCountPerTarget goal for the API (requests per target per minute). null (default) adds no request-based policy."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.api_alb_request_count_target == null || try(var.api_alb_request_count_target > 0, false)
+    error_message = "api_alb_request_count_target must be positive when set."
+  }
+}
+
+variable "api_alb_resource_label" {
+  description = "ALBRequestCountPerTarget resource label, \"<alb_arn_suffix>/<target_group_arn_suffix>\" (modules/alb outputs). Required when api_alb_request_count_target is set."
+  type        = string
+  default     = null
+}
+
 variable "autoscaling_memory_target_percent" {
   description = "Target-tracking goal for average service memory utilization."
   type        = number

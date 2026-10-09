@@ -19,6 +19,11 @@ output "alb_arn_suffix" {
   value = aws_lb.this.arn_suffix
 }
 
+output "api_target_group_arn_suffix" {
+  description = "With alb_arn_suffix, forms the ALBRequestCountPerTarget resource label (\"<alb_arn_suffix>/<api_target_group_arn_suffix>\") for request-based ECS autoscaling."
+  value       = aws_lb_target_group.api.arn_suffix
+}
+
 output "access_logs_bucket_name" {
   value = try(aws_s3_bucket.access_logs[0].id, null)
 }
