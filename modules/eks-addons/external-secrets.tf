@@ -37,21 +37,31 @@ resource "aws_iam_role" "external_secrets" {
 # AWS-auto-generated name ("rds!cluster-<uuid>") that doesn't follow our patheya-express/<env>/
 # naming scheme, so it can't be reached by the prefix wildcard alone and is granted explicitly
 # instead (still least-privilege: one named resource, not "every RDS secret in the account").
+locals {
+  # Empty when the data layer isn't deployed (data_layer_enabled = false) — the operator and its
+  # ClusterSecretStore still install, but hold no read grant because there is nothing to sync.
+  external_secrets_readable_arns = compact([
+    var.secrets_manager_path_prefix == null ? null : "arn:${data.aws_partition.current.partition}:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.secrets_manager_path_prefix}/*",
+    var.aurora_master_secret_arn,
+  ])
+}
+
 data "aws_iam_policy_document" "external_secrets" {
+  count = length(local.external_secrets_readable_arns) > 0 ? 1 : 0
+
   statement {
-    effect  = "Allow"
-    actions = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = [
-      "arn:${data.aws_partition.current.partition}:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.secrets_manager_path_prefix}/*",
-      var.aurora_master_secret_arn,
-    ]
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+    resources = local.external_secrets_readable_arns
   }
 }
 
 resource "aws_iam_role_policy" "external_secrets" {
+  count = length(local.external_secrets_readable_arns) > 0 ? 1 : 0
+
   name   = "${var.name_prefix}-external-secrets-policy"
   role   = aws_iam_role.external_secrets.id
-  policy = data.aws_iam_policy_document.external_secrets.json
+  policy = data.aws_iam_policy_document.external_secrets[0].json
 }
 
 resource "helm_release" "external_secrets" {
@@ -127,6 +137,8 @@ resource "kubernetes_manifest" "cluster_secret_store" {
 # explicitly deploys, not an application workload.
 
 resource "kubernetes_manifest" "pgbouncer_credentials_external_secret" {
+  count = var.data_layer_enabled ? 1 : 0
+
   manifest = {
     apiVersion = "external-secrets.io/v1beta1"
     kind       = "ExternalSecret"
@@ -158,6 +170,8 @@ resource "kubernetes_manifest" "pgbouncer_credentials_external_secret" {
 }
 
 resource "kubernetes_manifest" "backend_database_url_external_secret" {
+  count = var.data_layer_enabled ? 1 : 0
+
   manifest = {
     apiVersion = "external-secrets.io/v1beta1"
     kind       = "ExternalSecret"
@@ -214,6 +228,8 @@ resource "kubernetes_manifest" "backend_database_url_external_secret" {
 #   razorpay:        {"keyId": "...", "keySecret": "..."}
 #   smtp:            {"host": "...", "port": "...", "user": "...", "pass": "...", "from": "..."}
 resource "kubernetes_manifest" "backend_app_secrets_external_secret" {
+  count = var.data_layer_enabled ? 1 : 0
+
   manifest = {
     apiVersion = "external-secrets.io/v1beta1"
     kind       = "ExternalSecret"
@@ -261,6 +277,8 @@ resource "kubernetes_manifest" "backend_app_secrets_external_secret" {
 }
 
 resource "kubernetes_manifest" "backend_redis_credentials_external_secret" {
+  count = var.data_layer_enabled ? 1 : 0
+
   manifest = {
     apiVersion = "external-secrets.io/v1beta1"
     kind       = "ExternalSecret"
@@ -299,4 +317,29 @@ resource "kubernetes_manifest" "backend_redis_credentials_external_secret" {
   }
 
   depends_on = [kubernetes_manifest.cluster_secret_store, kubernetes_namespace_v1.application]
+}
+
+moved {
+  from = kubernetes_manifest.pgbouncer_credentials_external_secret
+  to   = kubernetes_manifest.pgbouncer_credentials_external_secret[0]
+}
+
+moved {
+  from = kubernetes_manifest.backend_database_url_external_secret
+  to   = kubernetes_manifest.backend_database_url_external_secret[0]
+}
+
+moved {
+  from = kubernetes_manifest.backend_app_secrets_external_secret
+  to   = kubernetes_manifest.backend_app_secrets_external_secret[0]
+}
+
+moved {
+  from = kubernetes_manifest.backend_redis_credentials_external_secret
+  to   = kubernetes_manifest.backend_redis_credentials_external_secret[0]
+}
+
+moved {
+  from = aws_iam_role_policy.external_secrets
+  to   = aws_iam_role_policy.external_secrets[0]
 }

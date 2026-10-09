@@ -61,6 +61,7 @@ variable "app_secrets_arns" {
     data/outputs.tf's external_credential_secret_arns map keys.
   EOT
   type        = map(string)
+  default     = null
 }
 
 variable "karpenter_instance_families" {
@@ -81,6 +82,21 @@ variable "environment_tier" {
 
 # --- Phase 4 (Data Platform) additions below — External Secrets Operator + PgBouncer ---
 
+variable "data_layer_enabled" {
+  description = "false when this environment's data layer (Aurora/Redis/application secrets) isn't deployed — e.g. production's build operating mode. PgBouncer and every data-backed ExternalSecret are then omitted; External Secrets Operator itself still installs. true requires every data-layer input below."
+  type        = bool
+  default     = true
+
+  validation {
+    condition = !var.data_layer_enabled || alltrue([
+      var.secrets_manager_path_prefix != null, var.aurora_master_secret_arn != null, var.redis_auth_token_secret_arn != null,
+      var.aurora_writer_endpoint != null, var.aurora_port != null, var.aurora_database_name != null,
+      var.redis_primary_endpoint != null, var.redis_port != null, var.app_secrets_arns != null,
+    ])
+    error_message = "data_layer_enabled = true requires every data-layer input (secrets_manager_path_prefix, aurora_*, redis_*, app_secrets_arns) to be set from the data layer's outputs."
+  }
+}
+
 variable "aws_region" {
   description = "Region External Secrets Operator's ClusterSecretStore targets for Secrets Manager reads — always the same region this cluster runs in (no cross-region secret reads)."
   type        = string
@@ -89,20 +105,24 @@ variable "aws_region" {
 variable "secrets_manager_path_prefix" {
   description = "From module.secrets-manager's secrets_path_prefix output (\"patheya-express/<environment>\") — scopes External Secrets Operator's IRSA policy to exactly this environment's secrets."
   type        = string
+  default     = null
 }
 
 variable "aurora_master_secret_arn" {
   description = "From module.aurora's master_user_secret_arn — the RDS-managed credential PgBouncer's ExternalSecret syncs into a userlist Secret."
   type        = string
+  default     = null
 }
 
 variable "redis_auth_token_secret_arn" {
   description = "From module.secrets-manager's redis_auth_token_secret_arn."
   type        = string
+  default     = null
 }
 
 variable "aurora_writer_endpoint" {
-  type = string
+  type    = string
+  default = null
 }
 
 variable "aurora_reader_endpoint" {
@@ -112,11 +132,13 @@ variable "aurora_reader_endpoint" {
 }
 
 variable "aurora_port" {
-  type = number
+  type    = number
+  default = null
 }
 
 variable "aurora_database_name" {
-  type = string
+  type    = string
+  default = null
 }
 
 variable "pgbouncer_replica_count" {
@@ -132,6 +154,7 @@ variable "pgbouncer_pdb_min_available" {
 variable "redis_primary_endpoint" {
   description = "From module.elasticache — used when num_shards = 1 (no configuration_endpoint published)."
   type        = string
+  default     = null
 }
 
 variable "redis_configuration_endpoint" {
@@ -141,5 +164,12 @@ variable "redis_configuration_endpoint" {
 }
 
 variable "redis_port" {
-  type = number
+  type    = number
+  default = null
+}
+
+variable "manage_core_addons" {
+  description = "false when the cluster layer already owns vpc-cni, coredns and kube-proxy as EKS-managed add-ons (modules/eks var.managed_addons) — this module then leaves them alone instead of both layers managing the same add-on."
+  type        = bool
+  default     = true
 }

@@ -12,6 +12,50 @@ variable "kubernetes_version" {
   default     = "1.31"
 }
 
+variable "support_type" {
+  description = "EKS upgrade_policy.support_type — \"STANDARD\" lets EKS auto-upgrade at the end of standard support instead of silently entering (paid) extended support. null omits the block and keeps the AWS default (EXTENDED)."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.support_type == null || contains(["STANDARD", "EXTENDED"], coalesce(var.support_type, "STANDARD"))
+    error_message = "support_type must be null, \"STANDARD\", or \"EXTENDED\"."
+  }
+}
+
+variable "bootstrap_self_managed_addons" {
+  description = "true keeps EKS's default install of unmanaged vpc-cni/kube-proxy/coredns at creation. Set false only together with var.managed_addons providing them. Changing it forces cluster replacement."
+  type        = bool
+  default     = true
+
+  validation {
+    condition     = var.bootstrap_self_managed_addons || (contains(keys(var.managed_addons), "vpc-cni") && contains(keys(var.managed_addons), "kube-proxy"))
+    error_message = "bootstrap_self_managed_addons = false requires managed_addons to include at least vpc-cni and kube-proxy — otherwise nodes can never become Ready."
+  }
+}
+
+variable "managed_addons" {
+  description = <<-EOT
+    EKS-managed add-ons this module owns, keyed by add-on name (addons.tf). version is pinned
+    explicitly — always one listed by `aws eks describe-addon-versions --kubernetes-version <v>`.
+    before_compute = true for add-ons nodes need to join (vpc-cni, kube-proxy); false for
+    Deployment-based ones created after the node groups (coredns). Default {} leaves add-ons to
+    modules/eks-addons.
+  EOT
+  type = map(object({
+    version              = string
+    configuration_values = optional(string)
+    before_compute       = bool
+  }))
+  default = {}
+}
+
+variable "create_cloudwatch_log_group" {
+  description = "false when the caller creates /aws/eks/<name_prefix>/cluster in a longer-lived layer (so destroying the cluster keeps its audit history); true creates it here, tied to the cluster's lifecycle."
+  type        = bool
+  default     = true
+}
+
 variable "vpc_id" {
   type = string
 }

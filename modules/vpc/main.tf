@@ -69,8 +69,15 @@ resource "aws_subnet" "private_data" {
 
 # --- NAT ----------------------------------------------------------------------------------------
 
+# enable_nat_gateway = false removes every NAT Gateway, its EIP, and every private-app default
+# route together - the topology (single vs per-AZ) is still decided solely by single_nat_gateway,
+# so re-enabling always restores exactly the same shape.
+locals {
+  nat_gateway_count = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : 3) : 0
+}
+
 resource "aws_eip" "nat" {
-  count = var.single_nat_gateway ? 1 : 3
+  count = local.nat_gateway_count
 
   domain = "vpc"
 
@@ -82,7 +89,7 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "this" {
-  count = var.single_nat_gateway ? 1 : 3
+  count = local.nat_gateway_count
 
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
@@ -137,7 +144,7 @@ resource "aws_route_table" "private_app" {
 }
 
 resource "aws_route" "private_app_nat" {
-  count = 3
+  count = var.enable_nat_gateway ? 3 : 0 # no default route at all rather than one pointing at a NAT Gateway that doesn't exist
 
   route_table_id         = aws_route_table.private_app[count.index].id
   destination_cidr_block = "0.0.0.0/0"

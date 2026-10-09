@@ -11,7 +11,19 @@
 
 # Plan output files — may contain sensitive values in the plan diff, never committed
 *.tfplan
+*.tfplan.*
 *.plan
+
+# Terraform run captures (plan/apply output saved as text) — local audit evidence, archived
+# outside the repository; they carry account IDs, ARNs and resource IDs
+environments/**/*-plan*.txt
+environments/**/*-apply*.txt
+environments/**/*-run.txt
+environments/**/destroy-list*.txt
+
+# Lifecycle run logs (docs/production-lifecycle.md, safety requirement 10)
+logs/
+*.log
 
 # Real variable files — only *.tfvars.example is committed; a real one contains environment-
 # specific values that, even when non-secret, don't belong in Git (Section 6, platform-standards.md)
@@ -25,6 +37,13 @@
 # Crash logs
 crash.log
 crash.*.log
+
+# Local environment files and key material — never committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
 
 # OS/editor
 .DS_Store

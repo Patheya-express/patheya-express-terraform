@@ -24,7 +24,7 @@ output "external_secrets_role_arn" {
 
 output "pgbouncer_service_dns" {
   description = "In-cluster DNS name the (not-yet-deployed) application's DATABASE_URL points at — see external-secrets.tf's backend_database_url_external_secret."
-  value       = "${kubernetes_service_v1.pgbouncer.metadata[0].name}.${local.pgbouncer_namespace}.svc.cluster.local"
+  value       = var.data_layer_enabled ? "${kubernetes_service_v1.pgbouncer[0].metadata[0].name}.${local.pgbouncer_namespace}.svc.cluster.local" : null
 }
 
 output "data_platform_namespace" {

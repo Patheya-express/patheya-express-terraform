@@ -51,6 +51,12 @@ variable "private_data_subnet_cidrs" {
   }
 }
 
+variable "enable_nat_gateway" {
+  description = "false removes all NAT Gateways, their EIPs, and the private-app default routes (production's idle operating mode - nothing in the private-app subnets needs egress). Does not change the topology single_nat_gateway selects; true restores it exactly."
+  type        = bool
+  default     = true
+}
+
 variable "single_nat_gateway" {
   description = <<-EOT
     false (default, and the only acceptable value in production) provisions one NAT Gateway per

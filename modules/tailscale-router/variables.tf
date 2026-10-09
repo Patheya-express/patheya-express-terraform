@@ -37,3 +37,14 @@ variable "instance_type" {
   type    = string
   default = "t4g.micro" # 1 GiB RAM - t4g.nano's 0.5 GiB was insufficient for `dnf install` at boot (confirmed via an OOM kill in production); runtime packet-forwarding load itself is still trivial, this is purely an install-time headroom requirement
 }
+
+variable "desired_capacity" {
+  description = "0 stops the router (no instance, nothing to reach when the EKS cluster is absent); 1 runs the single self-healing instance. The IAM role, security group, launch template and auth-key secret are kept either way, so returning to 1 needs no identity or credential change."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = contains([0, 1], var.desired_capacity)
+    error_message = "desired_capacity must be 0 or 1 - this module deliberately runs at most one router instance."
+  }
+}

@@ -79,15 +79,16 @@ resource "aws_eks_node_group" "system" {
 
   tags = merge(var.tags, { Application = "eks", Purpose = "system-node-group" })
 
+  # desired_size is deliberately Terraform-owned (no ignore_changes): nothing in this platform
+  # resizes managed node groups at runtime — Karpenter provisions its own nodes above this floor
+  # and there is no cluster-autoscaler — and ignoring it made min_size increases (e.g. an
+  # environment moving to a larger operating mode) fail against a smaller live desired_size.
   depends_on = [
     aws_iam_role_policy_attachment.node_worker_policy,
     aws_iam_role_policy_attachment.node_cni_policy,
     aws_iam_role_policy_attachment.node_ecr_policy,
+    aws_eks_addon.before_compute,
   ]
-
-  lifecycle {
-    ignore_changes = [scaling_config[0].desired_size] # cluster-autoscaler/Karpenter-adjacent tooling may adjust this at runtime; Terraform should own min/max, not fight over desired
-  }
 }
 
 resource "aws_eks_node_group" "application" {
@@ -119,9 +120,6 @@ resource "aws_eks_node_group" "application" {
     aws_iam_role_policy_attachment.node_worker_policy,
     aws_iam_role_policy_attachment.node_cni_policy,
     aws_iam_role_policy_attachment.node_ecr_policy,
+    aws_eks_addon.before_compute,
   ]
-
-  lifecycle {
-    ignore_changes = [scaling_config[0].desired_size]
-  }
 }
