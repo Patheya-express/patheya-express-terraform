@@ -22,10 +22,27 @@ After the stack:
   run (tflint v0.53.0, CI's invocation: from the module directory, no plugins) is clean for every
   module and retained root except `environments/development` (decommission-only, no CI job):
   one unused `terraform_remote_state.network`.
-- **Plans** — CI keeps failing at OIDC until least-privilege CI roles exist in the four approved
-  accounts and their ARNs are stored as repository secrets. Plan-development and plan-staging jobs
-  were removed with the four-account scope.
-- **Checkov** — still fails; tracked below rather than suppressed.
+- **Plans** — fail at OIDC until the `TF_ROLE_ARN_*` repository variables are set. The four
+  `patheya-<account>-terraform-role` roles exist and trust only
+  `repo:Patheya-express/patheya-express-terraform:ref:refs/heads/main`, so plan jobs on pull
+  requests keep failing at OIDC by design; push-to-main runs can plan. Several roots also need
+  git-ignored tfvars values CI does not have (management, security, shared-services, production
+  app), so their CI plans stop at missing variables. Plan-development and plan-staging jobs were
+  removed with the four-account scope.
+- **Checkov** — still fails; tracked below rather than suppressed. Three narrowly justified inline
+  skips were added for verified false positives introduced in the stack: `modules/waf`
+  (CKV_AWS_192 dynamic managed rules; CKV_AWS_338 retention variable) and `modules/vpc`
+  (CKV2_AWS_19, NAT EIP attached through `time_sleep`).
+- **tfsec** — report-only. The old `aquasecurity/tfsec-action` passed `--soft-fail` whatever its
+  input said, and failed intermittently installing itself (GitHub API rate limit; the aquasecurity
+  org IP allow list rejects authenticated runner calls). The reusable workflow now installs a
+  pinned, checksum-verified tfsec v1.28.14 (platform PRs #42, #43) and keeps it report-only. Local
+  scan of the stack tip: potential problems in management (99), security (101), shared-services
+  (66), production root (76) and 9 modules; triage them with the Checkov backlog before making
+  tfsec blocking.
+- **Plan artifacts** — removed (platform PR #42). A binary plan embeds prior state, including the
+  data layer's database passwords and Redis AUTH token; plans now publish only the summary and
+  resource addresses. This was the precondition for setting the `TF_ROLE_ARN_*` variables.
 
 ## Checkov backlog
 
