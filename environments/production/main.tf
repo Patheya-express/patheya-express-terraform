@@ -50,6 +50,17 @@ data "aws_caller_identity" "current" {}
 module "iam" {
   source = "../../modules/iam"
 
+  # Production runs the ECS Fargate API/worker behind an ALB, ECS service autoscaling, CloudFront
+  # static web, the API WAF and ECS Exec (modules/ecs enable_execute_command) — every family enabled.
+  workload_permissions = {
+    ecs                               = true
+    application_autoscaling           = true
+    cloudfront                        = true
+    wafv2                             = true
+    ecs_exec                          = true
+    load_balancer_service_linked_role = true
+  }
+
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
 

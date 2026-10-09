@@ -10,6 +10,16 @@ module "shared" {
 module "iam" {
   source = "../../modules/iam"
 
+  # Shared Services hosts ECR and the apex zone only: no production workload permissions.
+  workload_permissions = {
+    ecs                               = false
+    application_autoscaling           = false
+    cloudfront                        = false
+    wafv2                             = false
+    ecs_exec                          = false
+    load_balancer_service_linked_role = false
+  }
+
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
 

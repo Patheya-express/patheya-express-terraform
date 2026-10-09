@@ -73,14 +73,10 @@ data "aws_iam_policy_document" "terraform_role_permissions" {
   statement {
     sid    = "InfrastructureProvisioning"
     effect = "Allow"
-    actions = [
+    actions = concat([
       "ec2:*",
       "elasticloadbalancing:*",
       "eks:*",
-      "ecs:*",                     # ECS Fargate — Production runtime and development-temp; was missing here although the permission boundary already allowed it
-      "application-autoscaling:*", # ECS service autoscaling (modules/ecs autoscaling.tf)
-      "cloudfront:*",              # Production static web (modules/static-site)
-      "wafv2:*",                   # Production API edge (modules/waf)
       "rds:*",
       "elasticache:*",
       "backup:*",
@@ -107,7 +103,10 @@ data "aws_iam_policy_document" "terraform_role_permissions" {
       "sso:*",
       "sso-directory:*",
       "identitystore:*",
-    ]
+      ],
+      var.workload_permissions.ecs ? ["ecs:*"] : [], # ECS Fargate (Production runtime) — var.workload_permissions in variables.tf
+      local.workload_actions,
+    )
     resources = ["*"]
   }
 
@@ -191,17 +190,14 @@ data "aws_iam_policy_document" "terraform_role_permissions" {
     condition {
       test     = "StringEquals"
       variable = "iam:AWSServiceName"
-      values = [
+      values = concat([
         "eks.amazonaws.com",
         "eks-nodegroup.amazonaws.com",
         "elasticache.amazonaws.com",
         "rds.amazonaws.com",
         "backup.amazonaws.com",
         "spot.amazonaws.com",
-        "ecs.amazonaws.com",
-        "ecs.application-autoscaling.amazonaws.com",
-        "elasticloadbalancing.amazonaws.com",
-      ]
+      ], local.workload_service_linked_roles)
     }
   }
 

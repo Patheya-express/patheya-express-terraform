@@ -29,6 +29,16 @@ module "shared" {
 module "iam" {
   source = "../../modules/iam"
 
+  # Development is inactive (decommission-only root): no workload permissions.
+  workload_permissions = {
+    ecs                               = false
+    application_autoscaling           = false
+    cloudfront                        = false
+    wafv2                             = false
+    ecs_exec                          = false
+    load_balancer_service_linked_role = false
+  }
+
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
 }
