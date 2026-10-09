@@ -35,3 +35,14 @@ variable "keep_last_n_tagged_images" {
   type        = number
   default     = 30
 }
+
+variable "pull_account_ids" {
+  description = "Member account IDs allowed to pull, in addition to the organization condition. Empty (default) keeps organization-wide pull."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for id in var.pull_account_ids : can(regex("^[0-9]{12}$", id))])
+    error_message = "pull_account_ids must be 12-digit AWS account IDs."
+  }
+}

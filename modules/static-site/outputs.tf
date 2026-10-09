@@ -14,3 +14,12 @@ output "distribution_domain_names" {
   description = "CloudFront's own *.cloudfront.net domain per site — the Cloudflare CNAME target for each site's configured domain in var.sites."
   value       = { for k, v in aws_cloudfront_distribution.this : k => v.domain_name }
 }
+
+output "distribution_arns" {
+  value = { for k, v in aws_cloudfront_distribution.this : k => v.arn }
+}
+
+output "distribution_hosted_zone_ids" {
+  description = "CloudFront's fixed Route53 alias hosted zone ID, per site — for alias A/AAAA records."
+  value       = { for k, v in aws_cloudfront_distribution.this : k => v.hosted_zone_id }
+}

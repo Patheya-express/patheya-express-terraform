@@ -1,62 +1,89 @@
 # patheya-express-terraform
 
-AWS infrastructure for Patheya Express, from account foundation through the EKS/data/observability
-platform. Implements `cloud-architecture-blueprint.md` and `platform-standards.md` (both governing
-documents live in the
-`patheya-express-platform` backend repository's `docs/architecture/`) — read both before making any
-change here; where this repository's implementation needs a decision those documents don't cover,
-that's a gap to raise, not to silently invent a solution for.
+AWS infrastructure for Patheya Express, from account foundation through the Production ECS
+Fargate runtime. Implements `cloud-architecture-blueprint.md` and `platform-standards.md` (both
+governing documents live in the `patheya-express-platform` backend repository's
+`docs/architecture/`) — read both before making any change here; where this repository's
+implementation needs a decision those documents don't cover, that's a gap to raise, not to
+silently invent a solution for.
+
+## Where each environment runs
+
+| Environment | Hosting | In this repository |
+|---|---|---|
+| **Production** | **AWS** — account `512297269884`, `ap-south-1` | `environments/production` (root, `data/`, `app/`) |
+| Development / QA / Staging | **Not AWS** — Render, Neon, Upstash, Vercel | AWS account baselines only (`environments/development`, `qa`, `staging` hold no application runtime) |
+| Shared services | AWS — `668506406019` | ECR (`api-gateway`), apex Route53 zone, Production DNS-records role |
+| Management / Security | AWS | Organizations, Identity Center, CloudTrail, Config, GuardDuty, Security Hub |
+
+## Production architecture (ADR-004 as amended, 2026-10-02)
+
+```
+Capacitor mobile apps (primary)            Admin / secondary web (browser)
+        │ HTTPS api.patheyaexpress.com             │ HTTPS admin./customer./restaurant./delivery.
+        ▼                                          ▼
+  AWS WAF ─► public ALB (ACM, TLS 1.3)       CloudFront (ACM us-east-1, OAC) ─► private S3
+        │ :3000, private-app subnets                │ (static files call the API above)
+        ▼
+  ECS Fargate API service ◄─ Socket.IO Redis adapter ─► ECS Fargate worker service (BullMQ)
+        │                                                   │
+        ├──► RDS Proxy ─► Aurora PostgreSQL  (private-data) ◄┘   one-off migration task ─► Aurora writer
+        ├──► ElastiCache Redis, cluster mode disabled, TLS + AUTH (private-data)
+        └──► Cloudinary / Razorpay / SMTP via NAT (one per AZ)
+```
+
+Layers (`docs/production-lifecycle.md`): **root** (VPC, security groups, IAM/OIDC, CI deploy
+roles, security services) -> **data** (Aurora, RDS Proxy, ElastiCache, Secrets Manager) ->
+**app** (ACM, WAF, ALB, ECS, S3/CloudFront, Production DNS records). The former `cluster/` (EKS)
+and `platform/` (Kubernetes add-ons, ArgoCD, in-cluster observability and supply-chain tooling)
+layers are retired: their state was verified empty and their directories removed. The
+EKS/Kubernetes modules remain in `modules/` only because the Development/Staging EKS roots still
+reference them.
 
 ## Scope
 
-**Phase 0 remediation note**: this section previously described the repository as "Phase 2"
-(foundation only) and listed EKS, Aurora, ElastiCache, ArgoCD, Karpenter, the load-balancer
-controller, NGINX Ingress, External Secrets, and GitHub Actions CI/CD as explicitly not
-implemented. That was stale relative to the code in this same repository, which already contains
-all of them — an audit surfaced the mismatch and this section was corrected to describe what
-actually exists, not what an earlier phase plan said would exist by now.
+**What is live in AWS** (verified read-only on 2026-10-02): the AWS Organization and IAM Identity
+Center (management account), the organization CloudTrail, and the **Production root layer** —
+VPC, nine subnets, security groups, IAM/GitHub OIDC, KMS, Config, GuardDuty, Security Hub,
+Access Analyzer, flow logs — in `idle` mode (no NAT Gateways), with state in
+`patheya-express-terraform-state-512297269884`. Production's `data/` and `app/` layers have never
+been applied (no state), and shared-services has no ECR repository or Route53 zone yet. The
+statement this README previously made — "not yet applied to any real AWS account" — is no longer
+true and has been removed. Every first apply of the remaining layers is a reviewed, approved step
+(`docs/production-lifecycle.md`).
 
-**Implemented in Terraform (written, wired, `terraform validate`-clean — see below for what "written"
-does not yet mean):**
+**Implemented in Terraform:**
 
 - **Foundation**: AWS Organizations (7 accounts, 3 OUs, SCPs, budgets), IAM foundation (GitHub
   OIDC, Terraform CI roles, permission boundaries — no IAM users anywhere), networking (VPC,
-  subnets, NAT, Security Groups, NACLs, VPC Flow Logs), DNS (Route53 zones + delegation, ACM), ECR
-  (5 repositories), KMS, CloudTrail (org-wide trail), AWS Config (compliance rules, including
-  mandatory tag *detection* — see the note below), GuardDuty, Security Hub, IAM Access Analyzer.
-- **Platform**: Amazon EKS (control plane, managed node groups, Karpenter), EKS add-ons (AWS Load
-  Balancer Controller, NGINX Ingress, ExternalDNS, cert-manager, External Secrets Operator,
-  PgBouncer, storage classes), ArgoCD (app-of-apps bootstrap, 4-layer AppProjects).
-- **Data**: Aurora PostgreSQL, ElastiCache Redis, Secrets Manager, AWS Backup.
-- **Security & observability**: Falco, Kyverno, Trivy Operator (supply-chain security);
-  self-hosted Prometheus/Grafana/Loki/Tempo/OTel Collector; CloudWatch alarms + SNS.
+  subnets, NAT, Security Groups, NACLs, VPC Flow Logs, S3 gateway endpoint), DNS (Route53 zones,
+  ACM), ECR, KMS, CloudTrail (org-wide trail), AWS Config, GuardDuty, Security Hub, IAM Access
+  Analyzer.
+- **Production runtime**: ECS Fargate (API + worker services, one-off migration task, Application
+  Auto Scaling, ECS Exec, Container Insights, read-only root filesystem), ALB with access logs and
+  deletion protection, AWS WAF (`modules/waf`), S3 + CloudFront static web (`modules/static-site`).
+- **Data**: Aurora PostgreSQL, RDS Proxy (`modules/rds-proxy`), ElastiCache Redis (cluster mode
+  disabled), Secrets Manager, AWS Backup with a DR-region vault.
 - **CI**: `.github/workflows/terraform-ci.yml` — fmt/validate/plan per account, no automatic apply.
+  Application deploys are separate GitHub OIDC roles in Production (`modules/iam`), used by
+  `patheya-express-platform`'s `backend-deploy-ecs.yml` and the frontend's
+  `frontend-deploy-web.yml`.
 
-**Not yet applied to any real AWS account.** No environment in this repository has been applied —
-confirmed as part of the same Phase 0 remediation pass (no AWS credentials configured in the
-environment that audit ran from; every `backend.tf` still contains an unfilled
-`<account-id>` placeholder). "Implemented" above means the Terraform is written and internally
-consistent, not that any of it is running.
-
-**Still genuinely incomplete, hardened, or out of scope — not stale claims, real gaps:**
+**Still genuinely incomplete, hardened, or out of scope — real gaps:**
 
 - **The `dr` account and cross-account DR** — `environments/dr` doesn't exist; AWS Backup's
   cross-region copy is wired, cross-account copy is deferred until that account does.
 - **AWS Config's mandatory-tag enforcement is detective, not preventive** — it flags
   non-compliant resources after creation; nothing blocks creation of one missing a tag.
-- **A WAF/CDN edge** — deliberately not AWS-native (ADR-004 in the platform repo's
-  `cloud-architecture-blueprint.md`: Cloudflare is the sole public edge, CDN/WAF/DDoS all included
-  there, not duplicated in AWS).
-- **Image signing CI** — Kyverno's cosign-verification policy is `Enforce` by default with no
-  signing pipeline yet to produce a signed image; the first real deploy attempt needs that
-  pipeline first, or it's rejected unconditionally.
-- **Application-side changes** — the backend's Redis client is not cluster-aware; ElastiCache is
-  provisioned in Redis Cluster mode in every environment. That mismatch needs resolving (either
-  side) before BullMQ can be trusted against it. This is an application-repository change, not a
-  Terraform one, and is out of scope for this repository to make unilaterally.
-- **GitHub Actions CI/CD** — the Terraform-plan workflow above exists; the application build/test/
-  deploy pipelines (image build, sign, SBOM, promotion) live in `patheya-express-platform` and
-  `patheya-express-gitops`, not here.
+- **Prometheus metrics are not scraped in Production.** The API exposes `/metrics` (Prometheus
+  format) and it is intentionally kept, but ECS has no scraper: Production observability is
+  CloudWatch (task logs, Container Insights, ECS/ALB/WAF metrics and alarms). Adding Amazon
+  Managed Prometheus / ADOT is a separate, future decision.
+- **Production database roles** — `patheya_app` / `patheya_migrator` are created by a one-time,
+  documented privileged bootstrap (`docs/production-database-bootstrap.md`), not by Terraform.
+- **DNS cutover** — `patheyaexpress.com` is still on the registrar's parking nameservers; moving it
+  to the shared-services Route53 zone is a manual registrar step
+  (`docs/production-dns-cutover.md`).
 
 ## Repository structure
 
@@ -72,16 +99,23 @@ patheya-express-terraform/
     networking/           # Security Groups, private-data NACL, VPC Flow Logs
     route53/               # hosted zones + DNS-validated wildcard ACM certificates
     ecr/                  # container image repositories
+    ecs/                  # ECS Fargate cluster, API/worker services, migration task, autoscaling
+    alb/                  # public ALB, HTTPS listener, access logs, WAF association
+    waf/                  # regional AWS WAFv2 web ACL (AWS managed rule groups)
+    rds-proxy/            # RDS Proxy in front of Aurora PostgreSQL
+    static-site/          # private S3 + CloudFront (OAC) static web hosting
     cloudtrail/            # organization-wide trail (split: management owns the trail, security owns the bucket)
     config/                # AWS Config recorder/rules/aggregator
     security/              # GuardDuty, Security Hub, IAM Access Analyzer
   environments/
     management/            # the org's management account
     security/               # log archive + security-service delegated admin
-    shared-services/        # ECR + apex Route53 zone
+    shared-services/        # ECR + apex Route53 zone + Production DNS-records role
     development/
     staging/
-    production/
+    production/             # root (network, IAM, security services)
+      data/                 # Aurora, RDS Proxy, ElastiCache, Secrets Manager
+      app/                  # ACM, WAF, ALB, ECS, S3/CloudFront, Production DNS records
   docs/
 ```
 

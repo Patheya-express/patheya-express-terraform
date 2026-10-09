@@ -14,3 +14,11 @@ output "alb_zone_id" {
 output "target_group_arn" {
   value = aws_lb_target_group.api.arn
 }
+
+output "alb_arn_suffix" {
+  value = aws_lb.this.arn_suffix
+}
+
+output "access_logs_bucket_name" {
+  value = try(aws_s3_bucket.access_logs[0].id, null)
+}

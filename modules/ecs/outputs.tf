@@ -6,12 +6,29 @@ output "cluster_name" {
   value = aws_ecs_cluster.this.name
 }
 
+output "cluster_arn" {
+  value = aws_ecs_cluster.this.arn
+}
+
 output "api_service_name" {
-  value = aws_ecs_service.api.name
+  value = local.api_service.name
 }
 
 output "worker_service_name" {
-  value = aws_ecs_service.worker.name
+  value = local.worker_service.name
+}
+
+output "api_task_definition_family" {
+  value = aws_ecs_task_definition.api.family
+}
+
+output "worker_task_definition_family" {
+  value = aws_ecs_task_definition.worker.family
+}
+
+output "migration_task_definition_family" {
+  description = "CI runs `aws ecs run-task --task-definition <family>` — the latest ACTIVE revision, so a CI-registered revision (new image) is picked up."
+  value       = aws_ecs_task_definition.migration.family
 }
 
 output "migration_task_definition_arn" {
@@ -45,4 +62,8 @@ output "worker_log_group_name" {
 
 output "migration_log_group_name" {
   value = aws_cloudwatch_log_group.migration.name
+}
+
+output "service_management_mode" {
+  value = var.service_management_mode
 }

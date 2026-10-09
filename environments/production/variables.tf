@@ -8,8 +8,8 @@ variable "operating_mode" {
     Production lifecycle state — idle | build | live (docs/production-lifecycle.md). Deliberately
     no default: every plan/apply of this layer must name its mode, set in the committed
     operating-mode.auto.tfvars so a mode change is a reviewed Git change, not a CLI flag.
-      idle  — no NAT Gateways, no Tailscale router, no GitHub runner; foundation only.
-      build — 3 NAT Gateways (one per AZ), router 1, runner 1.
+      idle  — no NAT Gateways, no Tailscale router; foundation only.
+      build — 3 NAT Gateways (one per AZ), router 1.
       live  — same as build for this layer; the eventual full production runtime.
   EOT
   type        = string
@@ -20,9 +20,21 @@ variable "operating_mode" {
   }
 }
 
-variable "nlb_allowed_cidrs" {
-  description = "Cloudflare's current published IPv4 edge ranges (https://www.cloudflare.com/ips-v4/) — see modules/networking's own variable description for why this isn't hardcoded or defaulted. Required; populate via terraform.tfvars (gitignored) before applying this environment for real."
+variable "shared_services_account_id" {
+  description = "Owns the api-gateway ECR repository and the apex Route53 zone (environments/shared-services). Used only to construct those two deterministic ARNs for this layer's IAM scoping."
+  type        = string
+  default     = "668506406019"
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.shared_services_account_id))
+    error_message = "shared_services_account_id must be a 12-digit AWS account ID."
+  }
+}
+
+variable "static_sites" {
+  description = "Static web apps served from S3 + CloudFront by the app layer (modules/static-site keys). Must match environments/production/app's var.static_sites — the frontend deploy role is scoped to exactly these buckets."
   type        = list(string)
+  default     = ["admin", "customer", "restaurant", "delivery"]
 }
 
 variable "security_finding_notification_emails" {

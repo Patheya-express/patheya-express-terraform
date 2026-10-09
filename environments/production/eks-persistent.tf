@@ -1,8 +1,8 @@
-# The Production EKS control-plane log group, owned by this persistent root layer rather than by
-# cluster/, which is destroyed in idle mode and recreated later (docs/production-lifecycle.md).
-# Kept here, the audit/authenticator history of every cluster that has existed survives each
-# cluster teardown for the full retention period instead of being deleted with it. EKS delivers
-# into /aws/eks/<cluster-name>/cluster by name; cluster/ asserts the names match.
+# The retired Production EKS cluster's control-plane log group. EKS is no longer part of
+# Production's target architecture (ECS Fargate — ADR-004 as amended); this group is kept, with
+# its KMS key (main.tf's eks-secrets), purely as retained security evidence for the audit and
+# authenticator history of the cluster that existed 2026-09-25..28. Remove it — a deliberate code
+# change, since prevent_destroy blocks anything else — once its retention period has lapsed.
 
 resource "aws_cloudwatch_log_group" "eks_cluster" {
   name              = "/aws/eks/${module.shared.name_prefix}/cluster"

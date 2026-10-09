@@ -13,7 +13,7 @@ module "shared" {
 
   environment = "production"
   application = "data-platform"
-  purpose     = "Production Aurora PostgreSQL, ElastiCache Redis, and Secrets Manager"
+  purpose     = "Production Aurora PostgreSQL, RDS Proxy, ElastiCache Redis, and Secrets Manager"
   retention   = "35-days"
 }
 
@@ -25,9 +25,11 @@ module "kms" {
 
   keys = {
     aurora = {
-      description         = "Encrypts the Aurora PostgreSQL cluster, its RDS-managed master secret, and Performance Insights"
-      key_administrators  = [data.terraform_remote_state.network.outputs.terraform_role_arn]
-      additional_services = ["rds.amazonaws.com"]
+      description        = "Encrypts the Aurora PostgreSQL cluster, its RDS-managed master secret, and Performance Insights"
+      key_administrators = [data.terraform_remote_state.network.outputs.terraform_role_arn]
+      # cloudwatch.amazonaws.com: CloudWatch alarms publish to the alerts-database SNS topic, which
+      # this key encrypts (module.alerting) — without it every encrypted alarm notification fails.
+      additional_services = ["rds.amazonaws.com", "cloudwatch.amazonaws.com"]
     }
     redis = {
       description         = "Encrypts the ElastiCache Redis replication group at rest"
@@ -86,7 +88,22 @@ module "secrets_manager" {
   environment = "production"
   kms_key_arn = module.kms.key_arns["secrets"]
 
-  external_credential_secrets = ["jwt-signing-key", "cloudinary", "razorpay", "smtp"]
+  # Empty containers, populated out-of-band (docs/production-database-bootstrap.md lists each
+  # secret's JSON shape — the same shapes development-temp's ECS wiring already uses):
+  #   jwt-signing-key             {accessSecret, refreshSecret}
+  #   cloudinary                  {cloudName, apiKey, apiSecret}
+  #   razorpay                    {keyId (rzp_live_...), keySecret, webhookSecret}
+  #   smtp                        {host, port, user, pass, from}
+  #   bank-account-encryption-key plain string — BANK_ACCOUNT_ENCRYPTION_KEY, required at boot
+  #   super-admin-bootstrap       {email, password, firstName, lastName, phone}
+  external_credential_secrets = [
+    "jwt-signing-key",
+    "cloudinary",
+    "razorpay",
+    "smtp",
+    "bank-account-encryption-key",
+    "super-admin-bootstrap",
+  ]
 }
 
 module "aurora" {
@@ -98,10 +115,11 @@ module "aurora" {
 
   vpc_id                   = data.terraform_remote_state.network.outputs.vpc_id
   private_data_subnet_ids  = data.terraform_remote_state.network.outputs.private_data_subnet_ids
-  aurora_security_group_id = data.terraform_remote_state.network.outputs.aurora_security_group_id
+  aurora_security_group_id = local.aurora_cluster_security_group_id # carries the RDS service-linked-role ordering (database-access.tf)
   kms_key_arn              = module.kms.key_arns["aurora"]
 
-  serverless            = false # provisioned db.r6g instances (cloud-architecture-blueprint.md Section 5's production row)
+  engine_version        = "16.15" # PostgreSQL 16 (aurora-postgresql16 family); the module default 16.4 is no longer offered in ap-south-1
+  serverless            = false   # provisioned db.r6g instances (cloud-architecture-blueprint.md Section 5's production row)
   instance_class_writer = "db.r6g.xlarge"
   instance_class_reader = "db.r6g.large"
   reader_count          = 2 # "1 writer + 2 readers, one per AZ"
@@ -128,9 +146,13 @@ module "elasticache" {
   kms_key_arn             = module.kms.key_arns["redis"]
   auth_token              = module.secrets_manager.redis_auth_token
 
-  node_type          = "cache.r6g.large"
-  num_shards         = 3
-  replicas_per_shard = 1 # "3 shards, each 1 primary + 1 replica, Multi-AZ automatic failover" (cloud-architecture-blueprint.md Section 6)
+  # Cluster mode DISABLED: the application's ioredis client (and therefore BullMQ and the Socket.IO
+  # Redis adapter) is not cluster-aware — apps/api-gateway/src/infrastructure/redis. One primary +
+  # one replica, Multi-AZ automatic failover; the client reconnects on READONLY during promotion.
+  # TLS in transit and the AUTH token are always on (modules/elasticache).
+  node_type            = "cache.r6g.large"
+  cluster_mode_enabled = false
+  replicas_per_shard   = 1
 
   snapshot_retention_days = 7
   apply_immediately       = false

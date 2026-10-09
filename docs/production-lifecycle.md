@@ -1,101 +1,167 @@
 # Production lifecycle — idle / build / live
 
 Production (account `512297269884`, `ap-south-1`) keeps its full live architecture in Terraform at
-all times. What changes between operating modes is only *how much of it is running*. Pre-launch,
-Production spends most of its time in **idle**; **build** brings up enough runtime to develop the
-production platform; **live** is the launched system. Nothing in this document weakens the live
-architecture — three AZs, three NAT Gateways, private-only EKS, Tailscale admin access and every
-security service are the same in every mode that runs them.
+all times. What changes between operating modes is only *how much of it is running*. Nothing in
+this document weakens the live architecture — three AZs, three NAT Gateways, private ECS tasks,
+private Aurora/Redis, AWS WAF and every security service are the same in every mode that runs
+them.
+
+**2026-10-02 — ECS Fargate (ADR-004 as amended).** The EKS `cluster/` and Kubernetes `platform/`
+layers are retired (state verified empty, directories removed) and replaced by one `app/` layer.
+The semantic changes versus the EKS-era version of this document are listed explicitly under
+[What changed from the EKS lifecycle](#what-changed-from-the-eks-lifecycle) — nothing was changed
+silently.
+
+## Layers
+
+| Layer | State key | Contains |
+|---|---|---|
+| root | `production/terraform.tfstate` | IAM/OIDC + CI deploy roles, KMS, VPC + subnets + S3 gateway endpoint, NAT (per mode), security groups (ALB, ECS tasks, RDS Proxy, migration, Redis, Aurora), Config, GuardDuty, Security Hub, flow logs, Tailscale router (per mode), retired-EKS log group |
+| data | `production/data/terraform.tfstate` | Aurora PostgreSQL (1 writer + 2 readers), RDS Proxy, ElastiCache Redis (1 primary + 1 replica, cluster mode disabled), Secrets Manager (`patheya-express/production/*`), DR backup vault |
+| app | `production/app/terraform.tfstate` | ACM (ap-south-1 + us-east-1), AWS WAF, ALB, ECS cluster/services/task definitions/autoscaling, S3 + CloudFront static web, Production records in the shared-services apex zone |
+
+Dependencies: `data` reads root; `app` reads root **and** data (task definitions reference the
+data layer's secrets in every mode).
 
 ## What exists in each mode
 
-| Layer (state key) | Resource | idle | build | live |
+| Layer | Resource | idle | build | live |
 |---|---|---|---|---|
-| root (`production/terraform.tfstate`) | IAM, GitHub OIDC, permission boundary | ✅ | ✅ | ✅ |
-| | KMS: `cloudtrail-logs`, `admin-connectivity`, `eks-secrets` | ✅ | ✅ | ✅ |
-| | Config, GuardDuty, Security Hub, Access Analyzer, flow logs | ✅ | ✅ | ✅ |
-| | VPC, 9 subnets, IGW, route tables, security groups | ✅ | ✅ | ✅ |
-| | EKS control-plane log group (`eks-persistent.tf`, `prevent_destroy`) | ✅ | ✅ | ✅ |
+| root | IAM/OIDC, KMS, VPC, subnets, security groups, S3 endpoint, security services | ✅ | ✅ | ✅ |
 | | NAT Gateways + EIPs + private-app default routes | — | 3 (per AZ) | 3 (per AZ) |
-| | Tailscale subnet router (ASG) | 0 | 1 | 1 |
-| | GitHub runner (ECS service) | 0 | 1 | 1 |
-| cluster (`production/cluster/…`) | EKS 1.36, `STANDARD` support, managed vpc-cni/kube-proxy/coredns | destroyed | ✅ | ✅ |
-| | system node group (m6i.large) | — | 2 | 3 |
-| | application node group (m6i.xlarge/m6a.xlarge) | — | 1 (min 0, max 2) | 3 (max 10) + Karpenter |
-| | Access entries: Terraform CI role, SSO PlatformAdministrator | — | ✅ | ✅ |
-| platform (`production/platform/…`) | add-ons, ingress, ArgoCD, observability, supply-chain | destroyed | reduced sizing, no PgBouncer / data ExternalSecrets | full sizing |
-| data (`production/data/…`) | Aurora HA, Redis HA, app secrets, DR backup vault | never in idle | **not deployed** | ✅ |
+| | Tailscale subnet router (ASG) — admin network access only, never app traffic | 0 | 1 | 1 |
+| data | Aurora, RDS Proxy, ElastiCache, secrets | ✅ once applied — never part of a stop | ✅ | ✅ |
+| app | ACM, WAF, ALB, CloudFront/S3, ECS cluster, task definitions | ✅ | ✅ | ✅ |
+| | ECS API service (Application Auto Scaling min/max) | 0 / 0 | 1 / 1 | 3 / 10 |
+| | ECS worker service (min/max) | 0 / 0 | 1 / 1 | 3 / 6 |
+| | Target-tracking autoscaling (CPU 60 %, memory 75 %) | inert | inert (min = max) | active |
+| | Running-task alarms (API / worker) | none | < 1 / < 1 | < 2 / < 2 |
 
-The mode is declared per layer in a committed `operating-mode.auto.tfvars` (root, cluster,
-platform). The variable has no default, is validated, and a mode change is therefore a reviewed
-Git change. The cluster and platform layers accept only `build` or `live` — in idle they are
-destroyed, never applied. The data layer has no mode: it is applied once, at launch, and after
-that is never part of a stop.
+The mode is declared per layer in a committed `operating-mode.auto.tfvars` (root and app; the
+data layer has no mode). The variable has no default, is validated, and a mode change is therefore
+a reviewed Git change.
 
-## Why each runtime resource is destroyed or scaled rather than "stopped"
+**Idle means no application traffic, not "no infrastructure":** with both services at 0 tasks the
+ALB answers every request with 503, so nothing reaches the data tier. Idle also turns NAT off,
+which is safe precisely because no task runs. Do not put the app layer in build/live while the
+root layer is idle — tasks would have no egress (ECR API, Secrets Manager, Logs).
 
-| Resource | Idle action | Reason |
-|---|---|---|
-| EKS cluster + node groups | destroy the cluster layer | EKS has no stopped state; the control plane bills hourly while it exists |
-| NAT Gateways + EIPs | `enable_nat_gateway = false` | no stopped state; nothing in private-app needs egress with no cluster, router or runner |
-| Tailscale router | ASG 0 (launch template, role, SG, auth-key secret kept) | its only purpose is reaching the EKS private endpoint |
-| GitHub runner | ECS desired 0 (task definition, role, PAT secret kept) | only needed to reach the EKS private endpoint |
-| Platform | destroy the platform layer first | controllers create NLBs, EBS volumes and DNS records that would otherwise be orphaned |
+### Fargate capacity
 
-The EKS control-plane log group and the `eks-secrets` KMS key live in the root layer so that
-destroying a cluster never deletes its audit history or the key encrypting it.
+Task sizes are identical in every mode (API 1 vCPU / 2 GB, worker 0.5 vCPU / 1 GB, migration
+0.25 vCPU / 0.5 GB) so build exercises the exact live shapes. The live maxima are deliberately
+**not** the old Kubernetes HPA ceilings (API 15, worker 12): with a 200 % rolling-deployment
+ceiling those could need ~42 vCPU against the account's **30 vCPU** Fargate On-Demand quota
+(`L-3032A538`). Live worst case is 10 × 1 × 2 + 6 × 0.5 × 2 + 0.25 = **26.25 vCPU**; the app layer's
+`fargate_peak_vcpu` output has a precondition that fails the plan if a change would exceed the
+quota. Raising the maxima means raising the quota first.
+
+### Ownership of a running service
+
+Terraform owns the ECS infrastructure and every task-definition setting (CPU/memory, environment,
+secrets, health checks, hardening). `backend-deploy-ecs.yml` (patheya-express-platform) owns only
+the **image revision**: it renders each release from the family's latest ACTIVE revision and swaps
+the image for a digest-pinned one, so a Terraform-side setting change ships with the next release.
+Application Auto Scaling owns `desired_count` within Terraform's min/max. The services therefore
+`ignore_changes = [task_definition, desired_count]` — nothing else is ignored.
 
 ## Ordering
 
 ```
-start (idle → build|live)                     stop (build|live → idle)
-  1. root      operating_mode=build|live        1. platform  destroy
-  2. cluster   apply                            2. cluster   destroy
-  3. data      apply            (live only)     3. root      operating_mode=idle
-  4. platform  apply (via Tailscale or runner)  (data is NEVER destroyed by stop)
+first launch (data and app never applied)        stop (live|build -> idle)
+  1. root   operating_mode=build|live  apply       1. app   operating_mode=idle  apply (tasks -> 0)
+  2. data   apply                                  2. root  operating_mode=idle  apply (NAT off)
+  3. DB bootstrap (docs/production-database-       (data is NEVER destroyed by a stop)
+     bootstrap.md) — once, ever
+  4. shared-services apply + registrar NS change   start (idle -> build|live)
+     (docs/production-dns-cutover.md) — once       1. root  operating_mode=build|live  apply
+  5. app    operating_mode=build|live  apply       2. app   operating_mode=build|live  apply
+  6. backend-deploy-ecs.yml (migration + rollout)
+  7. frontend-deploy-web.yml
 ```
-
-`cluster` reads `eks_secrets_kms_key_arn` and `eks_cluster_log_group_name` from root state, so the
-root layer must be applied (with this change) before the first cluster plan can succeed.
-`platform` in `live` mode reads the data layer's state; in `build` it does not read it at all.
 
 ## Lifecycle command safety requirements
 
 The future `scripts/patheya-prod.sh {status | start --mode build|live | stop}` must enforce, before
-any plan/apply/destroy:
+any plan/apply:
 
 1. **Account**: `aws sts get-caller-identity` account is exactly `512297269884`.
-2. **Region**: `ap-south-1` for every command (`AWS_REGION` and the provider's `aws_region`).
+2. **Region**: `ap-south-1` for every command.
 3. **Identity**: the caller ARN is `assumed-role/AWSReservedSSO_PlatformAdministrator_*` (human)
    or `patheya-production-terraform-role` (CI via GitHub OIDC) — never an IAM user or access key.
-4. **Git**: clean working tree; the committed `operating-mode.auto.tfvars` of each layer matches
-   the requested mode (the script commits nothing itself).
+4. **Git**: clean working tree; each layer's committed `operating-mode.auto.tfvars` matches the
+   requested mode (the script commits nothing itself).
 5. **Terraform lock**: no active entry for the layer's state key in
    `patheya-express-terraform-locks`; Terraform's own locking stays on (never `-lock=false`).
-6. **Plan allowlist**: every apply uses a saved plan; `terraform show -json` is checked so a root
-   plan may only touch NAT/EIP/route/router-ASG/runner-service (and nothing may be destroyed
-   outside those), and a cluster/platform destroy may only contain that layer's own addresses.
-   Anything else aborts. No `-target`, ever.
-7. **Data safety**: `stop` refuses to proceed if `production/data/terraform.tfstate` holds any
-   resource. Data-layer destruction is a separate, individually approved operation with a final
-   snapshot and deletion protection removed in a reviewed change first.
-8. **Orphan check** after platform destroy: no load balancer, target group, EBS volume or ENI
-   tagged `kubernetes.io/cluster/patheya-production`, and no ELB in the VPC, before the cluster is
-   destroyed.
+6. **Plan allowlist**: every apply uses a saved plan; `terraform show -json` is checked so that a
+   mode change may only touch — root: NAT/EIP/route/router-ASG; app: Application Auto Scaling
+   targets and the running-task alarms. Nothing may be destroyed outside those. No `-target`,
+   ever.
+7. **Data safety**: no lifecycle command ever plans a change to the data layer. Data-layer
+   destruction is a separate, individually approved operation with a final snapshot and deletion
+   protection removed in a reviewed change first.
+8. **Drain check** before a stop's root apply: both ECS services report 0 running tasks.
 9. **Confirmation**: destructive operations require typing `patheya-production` — never y/n.
 10. **Logging**: every run tees plan text, apply output and caller identity to
     `logs/lifecycle-<UTC timestamp>-<command>.log`.
 11. **Failure handling**: stop at the first failed step; every step is idempotent, so recovery is
     re-running the same command. State is versioned in S3 for rollback of a corrupted state.
-12. **Health gates** on start: NAT Gateways `available`; router instance `InService` and online in
-    the tailnet; cluster `ACTIVE`, node groups `ACTIVE`, nodes `Ready`, managed add-ons `ACTIVE`.
+12. **Health gates** on start: NAT Gateways `available`; ECS services `ACTIVE` with
+    running = desired; ALB target group healthy on `/api/v1/health/ready`.
 
-## Versions and known prerequisites before the platform layer runs on 1.36
+## CI/CD configuration (GitHub Environments named `production`)
 
-- Managed add-ons are pinned to EKS's 1.36 defaults (cluster/main.tf); re-check with
-  `aws eks describe-addon-versions --kubernetes-version 1.36` before each cluster creation.
-- modules/eks-addons pins Karpenter chart `1.0.6`, AWS Load Balancer Controller `1.11.0` and
-  ingress-nginx `4.11.3`; each must be checked against its Kubernetes 1.36 compatibility matrix,
-  and ingress-nginx's upstream retirement assessed, before the platform layer is applied.
-- Build capacity needs 8 vCPU of on-demand standard instances (plus the router's 2): the account's
-  current quota is 8, with a 32-vCPU increase request open.
+Both deploy roles trust only jobs in a GitHub Environment called `production` — configure that
+environment with required reviewers (the manual approval gate) in both repositories.
+
+**patheya-express-platform** — values from the app layer's `ecs_deploy_settings` output, the role
+from the root layer's `backend_ecs_deploy_role_arn` output:
+
+| Variable | Source |
+|---|---|
+| `PRODUCTION_ECS_DEPLOY_ROLE_ARN` | root `backend_ecs_deploy_role_arn` |
+| `PRODUCTION_IMAGE_REPOSITORY_URL` | `image_repository_url` |
+| `PRODUCTION_ECS_CLUSTER` | `cluster_name` |
+| `PRODUCTION_ECS_API_SERVICE` / `PRODUCTION_ECS_WORKER_SERVICE` | `api_service_name` / `worker_service_name` |
+| `PRODUCTION_ECS_API_TASK_FAMILY` / `PRODUCTION_ECS_WORKER_TASK_FAMILY` | `api_task_family` / `worker_task_family` |
+| `PRODUCTION_ECS_MIGRATION_TASK_FAMILY` | `migration_task_family` |
+| `PRODUCTION_ECS_MIGRATION_LOG_GROUP` | `migration_log_group_name` |
+| `PRODUCTION_ECS_MIGRATION_SUBNET_IDS` | `migration_subnet_ids`, comma-joined |
+| `PRODUCTION_ECS_MIGRATION_SECURITY_GROUP_ID` | `migration_security_group_id` |
+
+**frontend** — `PRODUCTION_STATIC_DEPLOY_ROLE_ARN` (root `frontend_static_deploy_role_arn`),
+`PRODUCTION_STATIC_SITES` (app `static_site_deploy_settings`, as JSON), and the secret
+`RAZORPAY_LIVE_KEY_ID`.
+
+## Observability
+
+CloudWatch only: task logs (`/patheya-express/production/ecs/{api,worker,migration}`, 30 days,
+KMS-encrypted), Container Insights, ECS CPU/memory alarms, running-task alarms, ALB 5xx / latency /
+unhealthy-target alarms, WAF metrics and blocked/counted-request logs, all routed to the
+`patheya-production-alerts-application` SNS topic (no subscriptions are created by Terraform). The
+API's Prometheus `/metrics` endpoint still exists and is intentionally kept, but **nothing scrapes
+it on ECS** — adding Amazon Managed Prometheus / ADOT is a separate decision.
+
+## What changed from the EKS lifecycle
+
+| Area | EKS-era behavior | ECS behavior | Why |
+|---|---|---|---|
+| Runtime layers | `cluster/` + `platform/`, destroyed in idle | one `app/` layer, never destroyed by a stop; idle = 0 tasks | Fargate and the ALB have no idle control-plane cost to avoid by destroying them; keeping the layer avoids recreating ACM/CloudFront/DNS on every start |
+| Data layer in build | not deployed in build | **required in every mode the app layer exists in** | ECS tasks cannot boot without Aurora/Redis/secrets; build now runs the real application |
+| GitHub runner | ECS service, 1 in build/live | removed | it existed only to reach the private EKS endpoint; deploys use AWS APIs from GitHub-hosted runners |
+| Tailscale router | 1 in build/live | unchanged | admin network access only; not on any application path |
+| Stop ordering | platform destroy → cluster destroy → root idle | app idle → root idle | no Kubernetes-created orphans (NLBs, EBS volumes, ENIs) to sweep |
+| Access into workloads | `kubectl` via Tailscale / runner | ECS Exec (IAM-authorized) | no Kubernetes API |
+
+## Phase B expectations for the existing root state
+
+The root layer is already applied, so its first plan after this change is not a no-op. Expected,
+reviewed changes: the EKS-only `nlb`, `eks_nodes` and EKS `redis` security groups and their rules
+are **destroyed**; the ECS-topology security groups (ALB, ECS tasks, Redis-ECS, RDS Proxy,
+migration) and Aurora ingress rules are **created**; the self-hosted GitHub runner (ECS cluster,
+service at 0, task definition, IAM role, security group, log group, PAT secret — scheduled for
+deletion with the secret's recovery window) is **destroyed**; the S3 gateway endpoint, the two CI
+deploy roles and their policies are **created**; and the Terraform role / permission boundary
+policies are **updated in place** (ECS, CloudFront, WAF, Application Auto Scaling, ECS Exec message
+channels, the scoped cross-account DNS role assumption). Nothing in the data tier is touched, and
+the retired-EKS log group (`prevent_destroy`) is retained.

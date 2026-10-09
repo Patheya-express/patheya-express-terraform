@@ -18,6 +18,11 @@ output "private_data_subnet_ids" {
   value = aws_subnet.private_data[*].id
 }
 
+output "private_app_route_table_ids" {
+  description = "For gateway VPC endpoints (e.g. S3) serving the private-app tier."
+  value       = aws_route_table.private_app[*].id
+}
+
 output "nat_gateway_ids" {
   value = aws_nat_gateway.this[*].id
 }

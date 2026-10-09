@@ -51,3 +51,28 @@ resource "aws_network_acl_rule" "private_data_egress_ephemeral" {
   from_port      = 1024
   to_port        = 65535
 }
+
+# Return traffic for connections the private-data tier itself opens to another private-data subnet
+# (RDS Proxy -> Aurora, both in this tier). The ephemeral-port egress rule above covers outbound
+# responses to app-tier clients, but a response arriving back at a data-tier client's ephemeral
+# port is inbound traffic and needs its own rule. Scoped to the private-data subnets' own CIDRs,
+# never the VPC or the app tier, so it does not open high ports to any other tier. Traffic within a
+# single subnet is not evaluated by a NACL, which is why only cross-subnet paths were affected.
+data "aws_subnet" "private_data" {
+  count = length(var.private_data_subnet_ids)
+
+  id = var.private_data_subnet_ids[count.index]
+}
+
+resource "aws_network_acl_rule" "private_data_ingress_ephemeral_from_private_data" {
+  count = length(var.private_data_subnet_ids)
+
+  network_acl_id = aws_network_acl.private_data.id
+  rule_number    = 300 + count.index
+  egress         = false
+  protocol       = "tcp"
+  rule_action    = "allow"
+  cidr_block     = data.aws_subnet.private_data[count.index].cidr_block
+  from_port      = 1024
+  to_port        = 65535
+}

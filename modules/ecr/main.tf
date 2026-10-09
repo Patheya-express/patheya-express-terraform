@@ -68,10 +68,11 @@ resource "aws_ecr_lifecycle_policy" "this" {
   })
 }
 
-# Cross-account pull — every account in the organization (development/staging/production EKS
-# nodes) can pull images from this account's registry; no push permission is granted here (that's
-# the Terraform CI role's own, narrower policy in the calling environment, not a blanket
-# repository-policy grant).
+# Cross-account pull — accounts in the organization can pull images from this account's registry;
+# no push permission is granted here (that's the CI push role's own, narrower policy in the calling
+# environment, not a blanket repository-policy grant). With var.pull_account_ids set, pull is
+# further narrowed to exactly those member accounts (Production only, since Development/QA/Staging
+# are not AWS-hosted) — both conditions must hold.
 data "aws_iam_policy_document" "cross_account_pull" {
   statement {
     sid    = "AllowOrgMemberPull"
@@ -91,6 +92,15 @@ data "aws_iam_policy_document" "cross_account_pull" {
       test     = "StringEquals"
       variable = "aws:PrincipalOrgID"
       values   = [var.organization_id]
+    }
+
+    dynamic "condition" {
+      for_each = length(var.pull_account_ids) > 0 ? [1] : []
+      content {
+        test     = "StringEquals"
+        variable = "aws:PrincipalAccount"
+        values   = var.pull_account_ids
+      }
     }
   }
 }

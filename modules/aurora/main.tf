@@ -13,7 +13,7 @@ resource "aws_db_subnet_group" "this" {
 resource "aws_rds_cluster_parameter_group" "this" {
   name_prefix = "${var.name_prefix}-aurora-cluster-"
   family      = "aurora-postgresql16"
-  description = "Cluster-level parameters — force_ssl and log_min_duration_statement for slow-query logging (this task's Section 9)."
+  description = "Cluster-level parameters - force_ssl and log_min_duration_statement for slow-query logging (this task's Section 9)."
 
   parameter {
     name         = "rds.force_ssl"

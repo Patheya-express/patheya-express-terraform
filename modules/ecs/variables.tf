@@ -30,7 +30,7 @@ variable "alb_target_group_arn" {
 # --- Image -----------------------------------------------------------------------------------------
 
 variable "image_repository_url" {
-  description = "From module.ecr's repository_urls[\"api-gateway\"] — the single image family that serves API, worker, and migration (docs/infrastructure/workers.md in the backend repo: worker and migration are the same image with a different command/entrypoint, never a separate repository)."
+  description = "From module.ecr's repository_urls[\"api-gateway\"] (or the shared-services repository's URL when pulling cross-account — see image_repository_arn) — the single image family that serves API, worker, and migration (docs/infrastructure/workers.md in the backend repo: worker and migration are the same image with a different command/entrypoint, never a separate repository)."
   type        = string
 }
 
@@ -179,4 +179,183 @@ variable "permission_boundary_arn" {
 variable "alarm_sns_topic_arn" {
   description = "Alarms still evaluate and appear in CloudWatch with this unset, but notify no one — always pass this."
   type        = string
+}
+
+variable "api_min_running_tasks_alarm_threshold" {
+  description = "Service-health alarm: fires when the API service's RunningTaskCount (Container Insights) stays below this for 3 minutes. null (default) creates no alarm. Requires container_insights != \"disabled\"."
+  type        = number
+  default     = null
+}
+
+variable "worker_min_running_tasks_alarm_threshold" {
+  description = "Service-health alarm for the worker service — see api_min_running_tasks_alarm_threshold."
+  type        = number
+  default     = null
+}
+
+# --- Service management / capacity -----------------------------------------------------------------
+
+variable "service_management_mode" {
+  description = <<-EOT
+    Who owns the running image revision and the task count (see main.tf's Services section):
+      "terraform"     (default) — Terraform owns both: var.image_tag and api/worker_desired_count.
+      "ci_autoscaled" — CI owns the task-definition revision (a release registers a new revision
+                        and updates the service); Application Auto Scaling owns desired_count
+                        within the api/worker_min/max_capacity bounds below. Terraform still owns
+                        every other setting. var.image_tag is then only the bootstrap image.
+  EOT
+  type        = string
+  default     = "terraform"
+
+  validation {
+    condition     = contains(["terraform", "ci_autoscaled"], var.service_management_mode)
+    error_message = "service_management_mode must be \"terraform\" or \"ci_autoscaled\"."
+  }
+}
+
+variable "api_min_capacity" {
+  description = "Application Auto Scaling lower bound for the API service (ci_autoscaled only). 0 scales the service to zero (idle mode)."
+  type        = number
+  default     = null
+
+  validation {
+    condition = var.service_management_mode != "ci_autoscaled" || (
+      var.api_min_capacity != null && var.api_max_capacity != null &&
+      try(var.api_min_capacity >= 0 && var.api_min_capacity <= var.api_max_capacity, false)
+    )
+    error_message = "ci_autoscaled requires api_min_capacity and api_max_capacity, with 0 <= min <= max."
+  }
+}
+
+variable "api_max_capacity" {
+  description = "Application Auto Scaling upper bound for the API service (ci_autoscaled only)."
+  type        = number
+  default     = null
+}
+
+variable "worker_min_capacity" {
+  description = "Application Auto Scaling lower bound for the worker service (ci_autoscaled only)."
+  type        = number
+  default     = null
+
+  validation {
+    condition = var.service_management_mode != "ci_autoscaled" || (
+      var.worker_min_capacity != null && var.worker_max_capacity != null &&
+      try(var.worker_min_capacity >= 0 && var.worker_min_capacity <= var.worker_max_capacity, false)
+    )
+    error_message = "ci_autoscaled requires worker_min_capacity and worker_max_capacity, with 0 <= min <= max."
+  }
+}
+
+variable "worker_max_capacity" {
+  description = "Application Auto Scaling upper bound for the worker service (ci_autoscaled only)."
+  type        = number
+  default     = null
+}
+
+variable "autoscaling_cpu_target_percent" {
+  description = "Target-tracking goal for average service CPU utilization."
+  type        = number
+  default     = 60
+}
+
+variable "autoscaling_memory_target_percent" {
+  description = "Target-tracking goal for average service memory utilization."
+  type        = number
+  default     = 75
+}
+
+variable "autoscaling_scale_in_cooldown_seconds" {
+  type    = number
+  default = 300
+}
+
+variable "autoscaling_scale_out_cooldown_seconds" {
+  type    = number
+  default = 60
+}
+
+variable "deployment_minimum_healthy_percent" {
+  description = "Rolling-deployment floor, as a percentage of desired count."
+  type        = number
+  default     = 100
+}
+
+variable "deployment_maximum_percent" {
+  description = "Rolling-deployment ceiling, as a percentage of desired count. With the default 200, a service at N tasks briefly runs up to 2N during a deploy — callers must size their max capacities so that surge fits the account's Fargate vCPU quota."
+  type        = number
+  default     = 200
+
+  validation {
+    condition     = var.deployment_maximum_percent >= 100
+    error_message = "deployment_maximum_percent must be at least 100."
+  }
+}
+
+variable "api_health_check_grace_period_seconds" {
+  description = "Seconds ECS ignores ALB health-check failures after an API task starts. null (default) leaves the ECS default (0)."
+  type        = number
+  default     = null
+}
+
+# --- Platform / hardening -------------------------------------------------------------------------
+
+variable "container_insights" {
+  description = "ECS cluster containerInsights setting. \"disabled\" (default) is development-temp's deliberately minimal choice; Production enables it (it is also what publishes the RunningTaskCount metric the service-health alarms use)."
+  type        = string
+  default     = "disabled"
+
+  validation {
+    condition     = contains(["disabled", "enabled", "enhanced"], var.container_insights)
+    error_message = "container_insights must be \"disabled\", \"enabled\" or \"enhanced\"."
+  }
+}
+
+variable "enable_execute_command" {
+  description = "ECS Exec — the operational access mechanism into running API/worker tasks (replaces kubectl exec). Adds the SSM message-channel permissions to the API/worker task roles and an init process to their containers."
+  type        = bool
+  default     = false
+}
+
+variable "stop_timeout_seconds" {
+  description = "Seconds between SIGTERM and SIGKILL for API/worker containers. null (default) leaves the Fargate default (30s). Must exceed the application's SHUTDOWN_TIMEOUT_MS."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.stop_timeout_seconds == null || try(var.stop_timeout_seconds >= 2 && var.stop_timeout_seconds <= 120, false)
+    error_message = "stop_timeout_seconds must be between 2 and 120 (Fargate's limit)."
+  }
+}
+
+variable "readonly_root_filesystem" {
+  description = "Mounts the API/worker containers' root filesystem read-only. Pair with writable_container_paths for any directory the application genuinely writes to."
+  type        = bool
+  default     = false
+}
+
+variable "writable_container_paths" {
+  description = "Container paths given a writable ephemeral (task-storage) bind mount — Fargate's substitute for tmpfs, which Fargate does not support. Empty by default."
+  type        = list(string)
+  default     = []
+}
+
+# --- Cross-account image / secrets ------------------------------------------------------------------
+
+variable "image_repository_arn" {
+  description = "ARN of the ECR repository at var.image_repository_url. When set, the execution role's pull permissions are scoped to exactly this repository — required when images live in another account (Production pulls from shared-services). null (default) keeps the original scope: this account's own repositories."
+  type        = string
+  default     = null
+}
+
+variable "secrets_kms_key_arns" {
+  description = "Additional KMS keys the execution role may decrypt with when resolving `secrets` — needed when secrets are encrypted with a different key than var.kms_key_arn (Production: the data layer's secrets key). var.kms_key_arn is always included."
+  type        = list(string)
+  default     = []
+}
+
+variable "migration_database_url_secret_arn" {
+  description = "Secrets Manager ARN injected as DATABASE_URL into the migration task only. null (default) reuses var.database_url_secret_arn. Production sets this to the migrator user's direct-to-writer URL so migration and runtime credentials stay separate."
+  type        = string
+  default     = null
 }
