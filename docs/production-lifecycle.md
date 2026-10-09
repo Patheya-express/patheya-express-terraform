@@ -32,10 +32,10 @@ data layer's secrets in every mode).
 | | Tailscale subnet router (ASG) — admin network access only, never app traffic | 0 | 1 | 1 |
 | data | Aurora, RDS Proxy, ElastiCache, secrets | ✅ once applied — never part of a stop | ✅ | ✅ |
 | app | ACM, WAF, ALB, CloudFront/S3, ECS cluster, task definitions | ✅ | ✅ | ✅ |
-| | ECS API service (Application Auto Scaling min/max) | 0 / 0 | 1 / 1 | 3 / 10 |
-| | ECS worker service (min/max) | 0 / 0 | 1 / 1 | 3 / 6 |
-| | Target-tracking autoscaling (CPU 60 %, memory 75 %) | inert | inert (min = max) | active |
-| | Running-task alarms (API / worker) | none | < 1 / < 1 | < 2 / < 2 |
+| | ECS API service (Application Auto Scaling min/max) | 0 / 0 | 1 / 1 | 2 / 6 |
+| | ECS worker service (min/max) | 0 / 0 | 1 / 1 | 1 / 3 |
+| | Target-tracking autoscaling (API: CPU 50 %, 1200 req/target/min; worker: CPU 60 %; both memory 75 %) | inert | inert (min = max) | active |
+| | Running-task alarms (API / worker) | none | < 1 / < 1 | < 2 / < 1 |
 
 The mode is declared per layer in a committed `operating-mode.auto.tfvars` (root and app; the
 data layer has no mode). The variable has no default, is validated, and a mode change is therefore
@@ -52,7 +52,7 @@ Task sizes are identical in every mode (API 1 vCPU / 2 GB, worker 0.5 vCPU / 1 G
 0.25 vCPU / 0.5 GB) so build exercises the exact live shapes. The live maxima are deliberately
 **not** the old Kubernetes HPA ceilings (API 15, worker 12): with a 200 % rolling-deployment
 ceiling those could need ~42 vCPU against the account's **30 vCPU** Fargate On-Demand quota
-(`L-3032A538`). Live worst case is 10 × 1 × 2 + 6 × 0.5 × 2 + 0.25 = **26.25 vCPU**; the app layer's
+(`L-3032A538`). Live worst case is 6 × 1 × 2 + 3 × 0.5 × 2 + 0.25 = **15.25 vCPU** (bounds sized from the 2026-10-08 single-task load test: ~40 rps ceiling per API task); the app layer's
 `fargate_peak_vcpu` output has a precondition that fails the plan if a change would exceed the
 quota. Raising the maxima means raising the quota first.
 

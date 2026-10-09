@@ -6,20 +6,6 @@ variable "name_prefix" {
   type = string
 }
 
-variable "environment" {
-  description = "development | staging | production."
-  type        = string
-
-  validation {
-    condition     = contains(["development", "staging", "production"], var.environment)
-    error_message = "environment must be one of: development, staging, production."
-  }
-}
-
-variable "vpc_id" {
-  type = string
-}
-
 variable "private_data_subnet_ids" {
   description = "From module.vpc (Phase 2) — the subnets with no default route (cloud-architecture-blueprint.md Section 2)."
   type        = list(string)

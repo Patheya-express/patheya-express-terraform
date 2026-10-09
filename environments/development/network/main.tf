@@ -56,7 +56,6 @@ module "networking" {
 
   vpc_id                  = module.vpc[0].vpc_id
   vpc_cidr                = module.vpc[0].vpc_cidr
-  private_app_subnet_ids  = module.vpc[0].private_app_subnet_ids
   private_data_subnet_ids = module.vpc[0].private_data_subnet_ids
 
   flow_log_kms_key_arn    = data.aws_kms_alias.cloudtrail_logs.target_key_arn

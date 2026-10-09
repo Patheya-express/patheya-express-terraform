@@ -1,3 +1,20 @@
+# ElastiCache publishes these engine metrics per node (CacheClusterId), not per replication group —
+# alarms on a ReplicationGroupId dimension match no data and sit in INSUFFICIENT_DATA. The alarms
+# watch the first node, named "<group>-001" ("<group>-0001-001" in cluster mode). That is the
+# primary while there are no replicas (Production); with replicas and automatic failover the
+# primary can move, and per-node alarms would be needed. ReplicationLag is reported by replicas,
+# so its alarm (HA only) watches the first replica.
+locals {
+  alarm_cache_cluster_id = format(
+    var.cluster_mode_enabled ? "%s-0001-001" : "%s-001",
+    aws_elasticache_replication_group.this.replication_group_id,
+  )
+  alarm_replica_cache_cluster_id = format(
+    var.cluster_mode_enabled ? "%s-0001-002" : "%s-002",
+    aws_elasticache_replication_group.this.replication_group_id,
+  )
+}
+
 resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   alarm_name          = "${var.name_prefix}-redis-cpu-high"
   comparison_operator = "GreaterThanThreshold"
@@ -13,7 +30,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   treat_missing_data  = "missing"
 
   dimensions = {
-    ReplicationGroupId = aws_elasticache_replication_group.this.replication_group_id
+    CacheClusterId = local.alarm_cache_cluster_id
   }
 
   tags = merge(var.tags, { Application = "elasticache", Purpose = "cpu-alarm" })
@@ -34,7 +51,7 @@ resource "aws_cloudwatch_metric_alarm" "memory_high" {
   treat_missing_data  = "missing"
 
   dimensions = {
-    ReplicationGroupId = aws_elasticache_replication_group.this.replication_group_id
+    CacheClusterId = local.alarm_cache_cluster_id
   }
 
   tags = merge(var.tags, { Application = "elasticache", Purpose = "memory-alarm" })
@@ -55,7 +72,7 @@ resource "aws_cloudwatch_metric_alarm" "connections_high" {
   treat_missing_data  = "missing"
 
   dimensions = {
-    ReplicationGroupId = aws_elasticache_replication_group.this.replication_group_id
+    CacheClusterId = local.alarm_cache_cluster_id
   }
 
   tags = merge(var.tags, { Application = "elasticache", Purpose = "connections-alarm" })
@@ -78,7 +95,7 @@ resource "aws_cloudwatch_metric_alarm" "replication_lag_high" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    ReplicationGroupId = aws_elasticache_replication_group.this.replication_group_id
+    CacheClusterId = local.alarm_replica_cache_cluster_id
   }
 
   tags = merge(var.tags, { Application = "elasticache", Purpose = "replication-lag-alarm" })
@@ -99,7 +116,7 @@ resource "aws_cloudwatch_metric_alarm" "evictions_high" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    ReplicationGroupId = aws_elasticache_replication_group.this.replication_group_id
+    CacheClusterId = local.alarm_cache_cluster_id
   }
 
   tags = merge(var.tags, { Application = "elasticache", Purpose = "evictions-alarm" })

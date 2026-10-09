@@ -5,7 +5,6 @@
 # modules/eks/README.md's "Session Manager, not SSH" principle.
 
 data "aws_partition" "current" {}
-data "aws_caller_identity" "current" {}
 
 # The SSM public parameter for "latest plain Amazon Linux 2023" - not an `aws_ami` name-glob
 # lookup. A glob like "al2023-ami-*-arm64" also matches the ECS-optimized variant

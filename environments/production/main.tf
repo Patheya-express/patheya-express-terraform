@@ -50,6 +50,17 @@ data "aws_caller_identity" "current" {}
 module "iam" {
   source = "../../modules/iam"
 
+  # Production runs the ECS Fargate API/worker behind an ALB, ECS service autoscaling, CloudFront
+  # static web, the API WAF and ECS Exec (modules/ecs enable_execute_command) — every family enabled.
+  workload_permissions = {
+    ecs                               = true
+    application_autoscaling           = true
+    cloudfront                        = true
+    wafv2                             = true
+    ecs_exec                          = true
+    load_balancer_service_linked_role = true
+  }
+
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
 
@@ -89,7 +100,7 @@ module "kms" {
   keys = {
     cloudtrail-logs = {
       description         = "Encrypts this account's VPC Flow Logs, Config snapshots, and its security-findings SNS topic"
-      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "delivery.logs.amazonaws.com", "sns.amazonaws.com"]
+      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "config.amazonaws.com", "delivery.logs.amazonaws.com", "sns.amazonaws.com", "events.amazonaws.com"]
     }
     admin-connectivity = {
       description         = "Encrypts the Tailscale router's auth-key secret, the GitHub runner's PAT secret, and the runner's CloudWatch log group - see admin-connectivity.tf"
@@ -131,7 +142,6 @@ module "networking" {
 
   vpc_id                  = module.vpc.vpc_id
   vpc_cidr                = module.vpc.vpc_cidr
-  private_app_subnet_ids  = module.vpc.private_app_subnet_ids
   private_data_subnet_ids = module.vpc.private_data_subnet_ids
 
   flow_log_kms_key_arn    = module.kms.key_arns["cloudtrail-logs"]

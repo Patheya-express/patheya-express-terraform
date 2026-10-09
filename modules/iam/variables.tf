@@ -121,6 +121,33 @@ variable "cross_account_assume_role_arns" {
   default     = []
 }
 
+variable "workload_permissions" {
+  description = <<-EOT
+    Workload-specific permission families for the Terraform CI role's permissions policy and the
+    account permission boundary. All default to false, so an account only receives what its root
+    explicitly enables — under the four-account policy only Production runs these workloads.
+      ecs                               — ecs:* (role policy) and the ECS service-linked role.
+                                          ecs:* in the permission boundary predates this input and
+                                          stays unconditional.
+      application_autoscaling           — application-autoscaling:* and its ECS service-linked role.
+      cloudfront                        — cloudfront:* (static web distributions).
+      wafv2                             — wafv2:* (API edge web ACL).
+      ecs_exec                          — boundary only: the four ssmmessages channel actions the
+                                          SSM agent in a bounded ECS task needs for ECS Exec.
+      load_balancer_service_linked_role — creation of the Elastic Load Balancing service-linked role.
+  EOT
+  type = object({
+    ecs                               = optional(bool, false)
+    application_autoscaling           = optional(bool, false)
+    cloudfront                        = optional(bool, false)
+    wafv2                             = optional(bool, false)
+    ecs_exec                          = optional(bool, false)
+    load_balancer_service_linked_role = optional(bool, false)
+  })
+  default  = {}
+  nullable = false
+}
+
 variable "ecs_deploy" {
   description = <<-EOT
     Production backend ECS deploy role (github-actions-ci-roles.tf). null (default) creates

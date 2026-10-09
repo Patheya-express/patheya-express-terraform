@@ -4,9 +4,12 @@
 # (min = max = 0). RegisterScalableTarget moves the current task count into the new [min, max]
 # range immediately, so a bound change takes effect on apply without touching desired_count.
 #
-# Target tracking on average CPU and memory per service. The worker has no queue-depth metric
-# published today (BullMQ backlog is not exported to CloudWatch), so it scales on the same resource
-# signals as the API rather than on an invented metric.
+# Target tracking on average CPU and memory per service, with an optional per-service CPU target.
+# The API can additionally track ALB requests per target (api_alb_request_count_target), which
+# reacts to a traffic ramp before CPU saturates. The worker has no queue-depth metric published
+# today (BullMQ backlog is not exported to CloudWatch), so it scales on resource signals only
+# rather than on an invented metric. With several policies on one target, Application Auto Scaling
+# scales out if any policy asks to and scales in only when all of them allow it.
 
 locals {
   autoscaled_services = local.ci_managed ? {
@@ -14,26 +17,44 @@ locals {
       service_name = local.api_service_name
       min_capacity = var.api_min_capacity
       max_capacity = var.api_max_capacity
+      cpu_target   = coalesce(var.api_autoscaling_cpu_target_percent, var.autoscaling_cpu_target_percent)
     }
     worker = {
       service_name = local.worker_service_name
       min_capacity = var.worker_min_capacity
       max_capacity = var.worker_max_capacity
+      cpu_target   = coalesce(var.worker_autoscaling_cpu_target_percent, var.autoscaling_cpu_target_percent)
     }
   } : {}
 
-  autoscaling_metrics = {
-    cpu    = { predefined_metric = "ECSServiceAverageCPUUtilization", target = var.autoscaling_cpu_target_percent }
-    memory = { predefined_metric = "ECSServiceAverageMemoryUtilization", target = var.autoscaling_memory_target_percent }
-  }
-
-  autoscaling_policies = {
-    for pair in setproduct(keys(local.autoscaled_services), keys(local.autoscaling_metrics)) :
-    "${pair[0]}-${pair[1]}" => {
-      service = pair[0]
-      metric  = local.autoscaling_metrics[pair[1]]
-    }
-  }
+  # Keys "<service>-cpu" / "<service>-memory" are unchanged from the shared-target version, so the
+  # existing policies update in place.
+  autoscaling_policies = merge(
+    {
+      for svc, cfg in local.autoscaled_services : "${svc}-cpu" => {
+        service           = svc
+        predefined_metric = "ECSServiceAverageCPUUtilization"
+        target            = cfg.cpu_target
+        resource_label    = null
+      }
+    },
+    {
+      for svc, cfg in local.autoscaled_services : "${svc}-memory" => {
+        service           = svc
+        predefined_metric = "ECSServiceAverageMemoryUtilization"
+        target            = var.autoscaling_memory_target_percent
+        resource_label    = null
+      }
+    },
+    local.ci_managed && var.api_alb_request_count_target != null ? {
+      "api-requests" = {
+        service           = "api"
+        predefined_metric = "ALBRequestCountPerTarget"
+        target            = var.api_alb_request_count_target
+        resource_label    = var.api_alb_resource_label
+      }
+    } : {},
+  )
 }
 
 resource "aws_appautoscaling_target" "service" {
@@ -60,12 +81,20 @@ resource "aws_appautoscaling_policy" "target_tracking" {
   scalable_dimension = aws_appautoscaling_target.service[each.value.service].scalable_dimension
 
   target_tracking_scaling_policy_configuration {
-    target_value       = each.value.metric.target
+    target_value       = each.value.target
     scale_in_cooldown  = var.autoscaling_scale_in_cooldown_seconds
     scale_out_cooldown = var.autoscaling_scale_out_cooldown_seconds
 
     predefined_metric_specification {
-      predefined_metric_type = each.value.metric.predefined_metric
+      predefined_metric_type = each.value.predefined_metric
+      resource_label         = each.value.resource_label
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = each.value.predefined_metric != "ALBRequestCountPerTarget" || try(length(each.value.resource_label) > 0, false)
+      error_message = "api_alb_request_count_target requires api_alb_resource_label (\"<alb_arn_suffix>/<target_group_arn_suffix>\")."
     }
   }
 }

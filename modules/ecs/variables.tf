@@ -95,12 +95,6 @@ variable "worker_desired_count" {
 
 # --- Health checks -----------------------------------------------------------------------------
 
-variable "api_readiness_path" {
-  description = "The application's existing readiness endpoint — used by the ALB target group (module.alb), not this module directly, but kept here so the container health check below stays in sync with the same contract."
-  type        = string
-  default     = "/api/v1/health/ready"
-}
-
 variable "liveness_path" {
   description = "The application's existing liveness endpoint (no dependency checks) — used for the ECS container-level health check on both API and worker containers, matching the backend Dockerfile's own HEALTHCHECK target."
   type        = string
@@ -257,6 +251,35 @@ variable "autoscaling_cpu_target_percent" {
   description = "Target-tracking goal for average service CPU utilization."
   type        = number
   default     = 60
+}
+
+variable "api_autoscaling_cpu_target_percent" {
+  description = "API CPU target-tracking goal. null (default) uses autoscaling_cpu_target_percent."
+  type        = number
+  default     = null
+}
+
+variable "worker_autoscaling_cpu_target_percent" {
+  description = "Worker CPU target-tracking goal. null (default) uses autoscaling_cpu_target_percent."
+  type        = number
+  default     = null
+}
+
+variable "api_alb_request_count_target" {
+  description = "ALBRequestCountPerTarget goal for the API (requests per target per minute). null (default) adds no request-based policy."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.api_alb_request_count_target == null || try(var.api_alb_request_count_target > 0, false)
+    error_message = "api_alb_request_count_target must be positive when set."
+  }
+}
+
+variable "api_alb_resource_label" {
+  description = "ALBRequestCountPerTarget resource label, \"<alb_arn_suffix>/<target_group_arn_suffix>\" (modules/alb outputs). Required when api_alb_request_count_target is set."
+  type        = string
+  default     = null
 }
 
 variable "autoscaling_memory_target_percent" {

@@ -57,7 +57,7 @@ locals {
   capacity_by_mode = {
     idle  = { api_min = 0, api_max = 0, worker_min = 0, worker_max = 0, api_alarm = null, worker_alarm = null }
     build = { api_min = 1, api_max = 1, worker_min = 1, worker_max = 1, api_alarm = 1, worker_alarm = 1 }
-    live  = { api_min = 3, api_max = 10, worker_min = 3, worker_max = 6, api_alarm = 2, worker_alarm = 2 }
+    live  = { api_min = 2, api_max = 6, worker_min = 1, worker_max = 3, api_alarm = 2, worker_alarm = 1 }
   }
   capacity = local.capacity_by_mode[var.operating_mode]
 
@@ -151,8 +151,8 @@ module "kms" {
   }
 }
 
-# No subscriptions are created here (email_subscriptions left empty) — on-call routing is attached
-# out-of-band once a real distribution list exists, exactly like the data layer's topic.
+# Email subscriptions come from alert_email_subscriptions (git-ignored terraform.tfvars), like the
+# data layer's topic; AWS emails each address a confirmation link before delivering anything.
 module "alerting" {
   source = "../../../modules/alerting"
 
@@ -160,6 +160,8 @@ module "alerting" {
   name_prefix = module.shared.name_prefix
   kms_key_arn = module.kms.key_arns["application"]
   topic_name  = "alerts-application"
+
+  email_subscriptions = var.alert_email_subscriptions
 }
 
 # --- ECS ---------------------------------------------------------------------------------------------
@@ -198,6 +200,16 @@ module "ecs" {
   api_max_capacity        = local.capacity.api_max
   worker_min_capacity     = local.capacity.worker_min
   worker_max_capacity     = local.capacity.worker_max
+
+  # Load-test baseline (loadtest/k6/results/phase5-2026-10-08): one 1-vCPU API task costs ~2% CPU
+  # per request/s and saturates near 40 rps; ~25-30 rps is comfortable. 50% CPU or 1200 requests
+  # per task per minute (20 rps) both scale out well before that ceiling. Aurora, the proxy and
+  # Redis were not the bottleneck at the single-task ceiling; live max 6 API tasks stays inside
+  # their headroom and the Fargate quota (fargate_peak_vcpu precondition).
+  api_autoscaling_cpu_target_percent    = 50
+  worker_autoscaling_cpu_target_percent = 60
+  api_alb_request_count_target          = 1200
+  api_alb_resource_label                = "${module.alb.alb_arn_suffix}/${module.alb.api_target_group_arn_suffix}"
 
   deployment_minimum_healthy_percent    = local.deployment_minimum_healthy_percent
   deployment_maximum_percent            = local.deployment_maximum_percent

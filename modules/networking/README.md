@@ -37,7 +37,6 @@ module "networking" {
 
   vpc_id                   = module.vpc.vpc_id
   vpc_cidr                 = module.vpc.vpc_cidr
-  private_app_subnet_ids   = module.vpc.private_app_subnet_ids
   private_data_subnet_ids  = module.vpc.private_data_subnet_ids
 
   flow_log_kms_key_arn = module.kms.key_arns["cloudtrail-logs"] # or a dedicated "vpc-flow-logs" key, if flow-log volume warrants a separate key later

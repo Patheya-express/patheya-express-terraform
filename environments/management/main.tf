@@ -12,7 +12,6 @@ module "organizations" {
 
   tags = module.shared.tags
 
-  management_account_email   = var.management_account_email
   member_accounts            = var.member_accounts
   budget_notification_emails = var.budget_notification_emails
 
@@ -33,6 +32,16 @@ module "organizations" {
 module "iam" {
   source = "../../modules/iam"
 
+  # Management runs no workloads (four-account policy): no production workload permissions.
+  workload_permissions = {
+    ecs                               = false
+    application_autoscaling           = false
+    cloudfront                        = false
+    wafv2                             = false
+    ecs_exec                          = false
+    load_balancer_service_linked_role = false
+  }
+
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
 }
@@ -46,7 +55,7 @@ module "kms" {
   keys = {
     cloudtrail-logs = {
       description         = "Encrypts the organization CloudTrail's CloudWatch Logs feed in this account, and this account's security-findings SNS topic"
-      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "sns.amazonaws.com"]
+      additional_services = ["cloudtrail.amazonaws.com", "logs.amazonaws.com", "sns.amazonaws.com", "events.amazonaws.com"]
     }
   }
 }

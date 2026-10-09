@@ -3,10 +3,6 @@ variable "aws_region" {
   default = "ap-south-1"
 }
 
-variable "management_account_email" {
-  type = string
-}
-
 variable "member_accounts" {
   type = map(object({
     email = string

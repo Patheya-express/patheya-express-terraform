@@ -10,8 +10,7 @@ data "aws_ssoadmin_instances" "this" {
 }
 
 locals {
-  sso_instance_arn  = var.enable_identity_center ? data.aws_ssoadmin_instances.this[0].arns[0] : null
-  identity_store_id = var.enable_identity_center ? data.aws_ssoadmin_instances.this[0].identity_store_ids[0] : null
+  sso_instance_arn = var.enable_identity_center ? data.aws_ssoadmin_instances.this[0].arns[0] : null
 }
 
 # --- Permission sets --------------------------------------------------------------------------

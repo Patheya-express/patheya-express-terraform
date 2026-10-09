@@ -37,6 +37,28 @@ locals {
   # policy document referencing that same resource's own computed attribute). IAM policy ARNs are
   # deterministic from account ID + name, so this is exact, not a guess.
   permission_boundary_arn = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${var.name_prefix}-permission-boundary"
+
+  # Workload-specific grants (var.workload_permissions), shared by the permission boundary and the
+  # Terraform role's permissions policy so the two can never drift apart. Only roots that run these
+  # workloads enable them (Production); every other account's documents stay without them.
+  workload_actions = concat(
+    var.workload_permissions.application_autoscaling ? ["application-autoscaling:*"] : [], # ECS service autoscaling (modules/ecs autoscaling.tf)
+    var.workload_permissions.cloudfront ? ["cloudfront:*"] : [],                           # static web (modules/static-site)
+    var.workload_permissions.wafv2 ? ["wafv2:*"] : [],                                     # API edge (modules/waf)
+  )
+  # ECS Exec session channels only (modules/ecs enable_execute_command) — task roles are bounded by
+  # the permission boundary, so without these the SSM agent inside a task cannot open a session.
+  ecs_exec_actions = var.workload_permissions.ecs_exec ? [
+    "ssmmessages:CreateControlChannel",
+    "ssmmessages:CreateDataChannel",
+    "ssmmessages:OpenControlChannel",
+    "ssmmessages:OpenDataChannel",
+  ] : []
+  workload_service_linked_roles = concat(
+    var.workload_permissions.ecs ? ["ecs.amazonaws.com"] : [],
+    var.workload_permissions.application_autoscaling ? ["ecs.application-autoscaling.amazonaws.com"] : [],
+    var.workload_permissions.load_balancer_service_linked_role ? ["elasticloadbalancing.amazonaws.com"] : [],
+  )
 }
 
 # --- Permission boundary -----------------------------------------------------------------------
@@ -71,14 +93,11 @@ data "aws_iam_policy_document" "permission_boundary" {
   statement {
     sid    = "AllowInfrastructureServices"
     effect = "Allow"
-    actions = [
+    actions = concat([
       "ec2:*",
       "elasticloadbalancing:*",
       "eks:*",
-      "ecs:*",                     # ECS Fargate — Production's runtime (ADR-004 as amended) and development-temp. eks:* stays for the Development/Staging EKS roots still in this repository.
-      "application-autoscaling:*", # ECS service autoscaling (modules/ecs autoscaling.tf)
-      "cloudfront:*",              # Production static web (modules/static-site)
-      "wafv2:*",                   # Production API edge (modules/waf)
+      "ecs:*", # pre-dates var.workload_permissions (live in every account's boundary); the role policy's ecs:* is gated
       "rds:*",
       "elasticache:*",
       "backup:*",
@@ -105,13 +124,7 @@ data "aws_iam_policy_document" "permission_boundary" {
       "sso:*",
       "sso-directory:*",
       "identitystore:*",
-      # ECS Exec session channels only (modules/ecs enable_execute_command) — task roles are
-      # bounded by this policy, so without these the SSM agent inside a task cannot open a session.
-      "ssmmessages:CreateControlChannel",
-      "ssmmessages:CreateDataChannel",
-      "ssmmessages:OpenControlChannel",
-      "ssmmessages:OpenDataChannel",
-    ]
+    ], local.workload_actions, local.ecs_exec_actions)
     resources = ["*"]
   }
 
@@ -169,17 +182,14 @@ data "aws_iam_policy_document" "permission_boundary" {
     condition {
       test     = "StringEquals"
       variable = "iam:AWSServiceName"
-      values = [
+      values = concat([
         "eks.amazonaws.com",
         "eks-nodegroup.amazonaws.com",
         "elasticache.amazonaws.com",
         "rds.amazonaws.com",
         "backup.amazonaws.com",
         "spot.amazonaws.com",
-        "ecs.amazonaws.com",
-        "ecs.application-autoscaling.amazonaws.com",
-        "elasticloadbalancing.amazonaws.com",
-      ]
+      ], local.workload_service_linked_roles)
     }
   }
 
