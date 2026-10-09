@@ -1,0 +1,8 @@
+# Line endings: Terraform configuration, templates and shell scripts are always checked out with LF,
+# on every platform. With core.autocrlf=true a Windows checkout would otherwise turn them into CRLF,
+# and Terraform then renders CRLF into values such as EC2 user_data — a CRLF-only difference against
+# infrastructure applied from Linux (observed on the production Tailscale router launch template).
+# The repository already stores these files with LF, so these rules change no file content.
+*.tf     text eol=lf
+*.tftpl  text eol=lf
+*.sh     text eol=lf
