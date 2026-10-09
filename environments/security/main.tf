@@ -60,7 +60,6 @@ module "config" {
   kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
 
   create_aggregator = true
-  organization_id   = var.organization_id
 }
 
 module "security" {
@@ -71,6 +70,5 @@ module "security" {
   kms_key_arn = module.kms.key_arns["cloudtrail-logs"]
 
   is_delegated_admin_account  = true
-  organization_id             = var.organization_id
   finding_notification_emails = var.security_finding_notification_emails
 }

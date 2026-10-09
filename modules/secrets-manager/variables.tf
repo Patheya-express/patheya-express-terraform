@@ -2,10 +2,6 @@ variable "tags" {
   type = map(string)
 }
 
-variable "name_prefix" {
-  type = string
-}
-
 variable "environment" {
   description = "development | staging | production — used only in the secret naming path, not for conditional logic."
   type        = string

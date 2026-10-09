@@ -12,7 +12,6 @@ module "organizations" {
 
   tags = module.shared.tags
 
-  management_account_email   = var.management_account_email
   member_accounts            = var.member_accounts
   budget_notification_emails = var.budget_notification_emails
 

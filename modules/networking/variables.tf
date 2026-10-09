@@ -14,10 +14,6 @@ variable "vpc_cidr" {
   type = string
 }
 
-variable "private_app_subnet_ids" {
-  type = list(string)
-}
-
 variable "private_data_subnet_ids" {
   type = list(string)
 }

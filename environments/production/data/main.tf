@@ -84,7 +84,6 @@ module "secrets_manager" {
   source = "../../../modules/secrets-manager"
 
   tags        = module.shared.tags
-  name_prefix = module.shared.name_prefix
   environment = "production"
   kms_key_arn = module.kms.key_arns["secrets"]
 
@@ -111,9 +110,7 @@ module "aurora" {
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
-  environment = "production"
 
-  vpc_id                   = data.terraform_remote_state.network.outputs.vpc_id
   private_data_subnet_ids  = data.terraform_remote_state.network.outputs.private_data_subnet_ids
   aurora_security_group_id = local.aurora_cluster_security_group_id # carries the RDS service-linked-role ordering (database-access.tf)
   kms_key_arn              = module.kms.key_arns["aurora"]
@@ -143,7 +140,6 @@ module "elasticache" {
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
 
-  vpc_id                  = data.terraform_remote_state.network.outputs.vpc_id
   private_data_subnet_ids = data.terraform_remote_state.network.outputs.private_data_subnet_ids
   redis_security_group_id = data.terraform_remote_state.network.outputs.redis_security_group_id
   kms_key_arn             = module.kms.key_arns["redis"]

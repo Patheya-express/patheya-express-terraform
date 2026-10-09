@@ -34,12 +34,6 @@ variable "is_delegated_admin_account" {
   default     = false
 }
 
-variable "organization_id" {
-  description = "Required when is_delegated_admin_account = true (Access Analyzer's organization-type analyzer)."
-  type        = string
-  default     = null
-}
-
 variable "kms_key_arn" {
   description = "Encrypts the security-findings SNS topic — reuses the environment's own cloudtrail-logs key (add \"sns.amazonaws.com\" to its additional_services), no dedicated key for this alone."
   type        = string

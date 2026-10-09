@@ -17,12 +17,6 @@ variable "create_aggregator" {
   default     = false
 }
 
-variable "organization_id" {
-  description = "Required when create_aggregator = true."
-  type        = string
-  default     = null
-}
-
 variable "delegate_admin_account_id" {
   description = "Set only in environments/management — the security account's ID, registered as the AWS Config delegated administrator so environments/security's organization aggregator (create_aggregator = true, called from a non-management account) is permitted to create an organization_aggregation_source. Left null everywhere else (delegation is a one-time, management-account-only action) — see modules/config/delegation.tf. Null disables registration."
   type        = string

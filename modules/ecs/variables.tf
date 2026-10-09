@@ -95,12 +95,6 @@ variable "worker_desired_count" {
 
 # --- Health checks -----------------------------------------------------------------------------
 
-variable "api_readiness_path" {
-  description = "The application's existing readiness endpoint — used by the ALB target group (module.alb), not this module directly, but kept here so the container health check below stays in sync with the same contract."
-  type        = string
-  default     = "/api/v1/health/ready"
-}
-
 variable "liveness_path" {
   description = "The application's existing liveness endpoint (no dependency checks) — used for the ECS container-level health check on both API and worker containers, matching the backend Dockerfile's own HEALTHCHECK target."
   type        = string

@@ -3,11 +3,6 @@ variable "tags" {
   type        = map(string)
 }
 
-variable "management_account_email" {
-  description = "Root/management account email — informational only (the management account itself is the pre-existing, manually-created account this configuration runs from; Terraform never creates it). Used purely for output/documentation clarity."
-  type        = string
-}
-
 variable "member_accounts" {
   description = <<-EOT
     One entry per member account this org creates (cloud-architecture-blueprint.md Section 2's six

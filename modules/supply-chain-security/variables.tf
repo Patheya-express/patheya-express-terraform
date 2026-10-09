@@ -15,10 +15,6 @@ variable "environment_tier" {
   }
 }
 
-variable "cluster_name" {
-  type = string
-}
-
 variable "aws_region" {
   type = string
 }
@@ -29,11 +25,6 @@ variable "oidc_provider_arn" {
 
 variable "oidc_provider_url" {
   type = string
-}
-
-variable "storage_class_name" {
-  description = "From module.eks_addons's default_storage_class — Trivy Operator's optional report-cache PVC, if ever enabled, would reuse it. Not used by Kyverno/Falco, which are stateless."
-  type        = string
 }
 
 variable "ecr_registry_host" {
