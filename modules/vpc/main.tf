@@ -94,6 +94,7 @@ locals {
 # EIP, since create_before_destroy needs the EIP free for the new gateway. Change topology through
 # single_nat_gateway / enable_nat_gateway, which add/remove EIP+NAT pairs together.
 resource "aws_eip" "nat" {
+  # checkov:skip=CKV2_AWS_19:Attached to aws_nat_gateway.this via time_sleep.nat_eip_release (allocation_id), which the graph check cannot follow.
   count = local.nat_gateway_count
 
   domain = "vpc"
