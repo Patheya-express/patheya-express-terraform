@@ -33,6 +33,9 @@ logs/
 # change (idle/build/live) is a reviewed Git change - docs/production-lifecycle.md.
 !environments/production/**/operating-mode.auto.tfvars
 !environments/production/operating-mode.auto.tfvars
+# Exception: the Production API rate limit (normally 100; temporarily raised only for a load test)
+# is committed for the same reason — the active value must always be visible in Git.
+!environments/production/app/rate-limit.auto.tfvars
 
 # Crash logs
 crash.log
