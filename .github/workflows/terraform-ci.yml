@@ -46,31 +46,9 @@ jobs:
       working-directory: ${{ matrix.module }}
       needs-plan: false
 
-  plan-development:
-    name: Plan (development / ${{ matrix.stage }})
-    strategy:
-      fail-fast: false
-      matrix:
-        stage: ["", "cluster", "data", "platform"]
-    uses: Patheya-express/patheya-express-platform/.github/workflows/reusable-terraform-plan.yml@main
-    with:
-      working-directory: environments/development${{ matrix.stage != '' && format('/{0}', matrix.stage) || '' }}
-      needs-plan: true
-      aws-region: ap-south-1
-      role-to-assume: ${{ vars.TF_ROLE_ARN_DEVELOPMENT }}
-
-  plan-staging:
-    name: Plan (staging / ${{ matrix.stage }})
-    strategy:
-      fail-fast: false
-      matrix:
-        stage: ["", "cluster", "data", "platform"]
-    uses: Patheya-express/patheya-express-platform/.github/workflows/reusable-terraform-plan.yml@main
-    with:
-      working-directory: environments/staging${{ matrix.stage != '' && format('/{0}', matrix.stage) || '' }}
-      needs-plan: true
-      aws-region: ap-south-1
-      role-to-assume: ${{ vars.TF_ROLE_ARN_STAGING }}
+  # Development, QA and Staging are inactive under the four-account policy (Management, Security,
+  # Shared Services, Production): no plan jobs and no TF_ROLE_ARN_* role mapping for them. The retained
+  # environments/development roots are decommission-only and are run manually under explicit approval.
 
   plan-production:
     name: Plan (production / ${{ matrix.stage }})
