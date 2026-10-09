@@ -8,7 +8,7 @@ module "shared" {
 }
 
 # Per-mode runtime capacity for this layer — explicit values, one row per mode, no derived math.
-# The three-AZ NAT topology itself (single_nat_gateway = false below) never varies by mode.
+# The NAT topology itself (single_nat_gateway below) never varies by mode.
 # NAT is the ECS tasks' egress path (ECR via S3 endpoint excepted): Cloudinary, Razorpay, SMTP,
 # Secrets Manager, CloudWatch Logs, ECR API.
 locals {
@@ -119,7 +119,7 @@ module "vpc" {
   private_app_subnet_cidrs  = ["10.30.16.0/20", "10.30.32.0/20", "10.30.48.0/20"]
   private_data_subnet_cidrs = ["10.30.64.0/24", "10.30.65.0/24", "10.30.66.0/24"]
 
-  single_nat_gateway = false                      # one NAT Gateway per AZ — mandatory in production, cloud-architecture-blueprint.md Section 2
+  single_nat_gateway = true                       # pre-launch cost optimization (2026-10-08): one NAT (ap-south-1a) serves all three private-app subnets; set back to false (one per AZ, cloud-architecture-blueprint.md Section 2) before production traffic
   enable_nat_gateway = local.runtime.nat_gateways # off only in idle mode — nothing in private-app needs egress then
 }
 
