@@ -45,6 +45,7 @@ locals {
     var.workload_permissions.application_autoscaling ? ["application-autoscaling:*"] : [], # ECS service autoscaling (modules/ecs autoscaling.tf)
     var.workload_permissions.cloudfront ? ["cloudfront:*"] : [],                           # static web (modules/static-site)
     var.workload_permissions.wafv2 ? ["wafv2:*"] : [],                                     # API edge (modules/waf)
+    var.workload_permissions.inspector ? ["inspector2:*"] : [],                            # Amazon Inspector activation
   )
   # ECS Exec session channels only (modules/ecs enable_execute_command) — task roles are bounded by
   # the permission boundary, so without these the SSM agent inside a task cannot open a session.
@@ -58,6 +59,7 @@ locals {
     var.workload_permissions.ecs ? ["ecs.amazonaws.com"] : [],
     var.workload_permissions.application_autoscaling ? ["ecs.application-autoscaling.amazonaws.com"] : [],
     var.workload_permissions.load_balancer_service_linked_role ? ["elasticloadbalancing.amazonaws.com"] : [],
+    var.workload_permissions.inspector ? ["inspector2.amazonaws.com"] : [],
   )
 }
 

@@ -55,6 +55,18 @@ locals {
       }
     } : {},
   )
+
+  # Worker queue backlog (waiting jobs per worker task, published by the worker itself). A custom
+  # metric, so a separate policy resource: target tracking with a customized metric. While the
+  # metric is missing it can neither scale out nor allow scale-in (AWS scales in only when every
+  # policy agrees), so a broken publisher fails safe: no scale-out on bad data, no scale-in.
+  worker_queue_policy = local.ci_managed && var.worker_queue_backlog_target_per_task != null && var.queue_metrics != null ? {
+    "worker-queue-backlog" = {
+      namespace   = var.queue_metrics.namespace
+      environment = var.queue_metrics.environment
+      target      = var.worker_queue_backlog_target_per_task
+    }
+  } : {}
 }
 
 resource "aws_appautoscaling_target" "service" {
@@ -95,6 +107,35 @@ resource "aws_appautoscaling_policy" "target_tracking" {
     precondition {
       condition     = each.value.predefined_metric != "ALBRequestCountPerTarget" || try(length(each.value.resource_label) > 0, false)
       error_message = "api_alb_request_count_target requires api_alb_resource_label (\"<alb_arn_suffix>/<target_group_arn_suffix>\")."
+    }
+  }
+}
+
+resource "aws_appautoscaling_policy" "worker_queue_backlog" {
+  for_each = local.worker_queue_policy
+
+  name               = "${var.name_prefix}-${each.key}-target-tracking"
+  policy_type        = "TargetTrackingScaling"
+  service_namespace  = aws_appautoscaling_target.service["worker"].service_namespace
+  resource_id        = aws_appautoscaling_target.service["worker"].resource_id
+  scalable_dimension = aws_appautoscaling_target.service["worker"].scalable_dimension
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = each.value.target
+    scale_in_cooldown  = var.autoscaling_scale_in_cooldown_seconds
+    scale_out_cooldown = var.autoscaling_scale_out_cooldown_seconds
+
+    customized_metric_specification {
+      namespace   = each.value.namespace
+      metric_name = "BacklogPerWorker"
+      # Every worker task publishes the same queue-wide value; Maximum is that value.
+      statistic = "Maximum"
+      unit      = "Count"
+
+      dimensions {
+        name  = "Environment"
+        value = each.value.environment
+      }
     }
   }
 }

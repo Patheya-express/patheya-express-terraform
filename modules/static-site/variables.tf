@@ -47,3 +47,34 @@ variable "kms_key_arn" {
   type        = string
   default     = null
 }
+
+variable "security_headers" {
+  description = <<-EOT
+    Response headers added to every response from every distribution (one shared CloudFront
+    response headers policy). Defaults are safe for any SPA; the caller supplies the CSP.
+      hsts_max_age_seconds      — Strict-Transport-Security max-age. includeSubDomains and preload
+                                  are deliberately off: each site opts in for its own host only.
+      referrer_policy           — CloudFront referrer-policy enum value.
+      frame_option              — DENY or SAMEORIGIN.
+      permissions_policy        — Permissions-Policy header value; null omits it.
+      content_security_policy   — CSP value; null omits it.
+      csp_report_only           — true sends it as Content-Security-Policy-Report-Only (logged by
+                                  the browser, never enforced) so a policy can be verified before
+                                  it can break the application.
+  EOT
+  type = object({
+    hsts_max_age_seconds    = optional(number, 31536000)
+    referrer_policy         = optional(string, "strict-origin-when-cross-origin")
+    frame_option            = optional(string, "DENY")
+    permissions_policy      = optional(string)
+    content_security_policy = optional(string)
+    csp_report_only         = optional(bool, true)
+  })
+  default  = {}
+  nullable = false
+
+  validation {
+    condition     = contains(["DENY", "SAMEORIGIN"], var.security_headers.frame_option)
+    error_message = "security_headers.frame_option must be DENY or SAMEORIGIN."
+  }
+}

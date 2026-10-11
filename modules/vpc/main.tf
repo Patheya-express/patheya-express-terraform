@@ -224,3 +224,15 @@ resource "aws_route_table_association" "private_data" {
   subnet_id      = aws_subnet.private_data[count.index].id
   route_table_id = aws_route_table.private_data[count.index].id
 }
+
+# The VPC's default security group, adopted with no rules (CIS AWS 5.4 / Security Hub EC2.2).
+# Nothing in this architecture uses it — every workload attaches its own purpose-built group
+# (modules/networking) — so it only ever matters as a fallback for a resource launched without an
+# explicit group, which should then have no connectivity at all rather than AWS's default
+# self-ingress plus unrestricted egress. Terraform cannot delete a default group; managing it with
+# no ingress/egress blocks removes its rules.
+resource "aws_default_security_group" "this" {
+  vpc_id = aws_vpc.this.id
+
+  tags = merge(var.tags, { Name = "${var.name_prefix}-default-sg-restricted", Purpose = "default-security-group-no-rules" })
+}

@@ -37,6 +37,16 @@ locals {
 
   api_worker_environment = [for k, v in var.app_environment : { name = k, value = v }]
 
+  # Worker only: the queue backlog publisher (api-gateway src/infrastructure/queues/metrics) runs
+  # in the worker process and publishes only when these are set.
+  worker_environment = var.queue_metrics == null ? local.api_worker_environment : concat(
+    local.api_worker_environment,
+    [
+      { name = "QUEUE_METRICS_ENABLED", value = "true" },
+      { name = "QUEUE_METRICS_ENVIRONMENT", value = var.queue_metrics.environment },
+    ],
+  )
+
   # Fargate has no tmpfs support — each writable path is an ephemeral task-storage bind mount
   # (a `volume` with no host path) instead. Empty by default, as is every hardening key below:
   # the merged container definitions are byte-identical to the original module output unless a
@@ -326,7 +336,7 @@ resource "aws_ecs_task_definition" "worker" {
       image       = local.worker_image
       essential   = true
       command     = ["node", "dist/src/worker-main.js"]
-      environment = local.api_worker_environment
+      environment = local.worker_environment
       secrets     = local.api_worker_secrets
       healthCheck = {
         # The worker still calls app.listen() purely to serve this endpoint (confirmed:
@@ -556,4 +566,30 @@ resource "aws_ecs_task_definition" "migration" {
   ])
 
   tags = merge(var.tags, { Application = "ecs", Purpose = "migration-task-definition" })
+}
+
+# Queue backlog publishing (var.queue_metrics): PutMetricData has no resource-level scoping, so the
+# grant is limited to the one namespace by the documented cloudwatch:namespace condition key.
+data "aws_iam_policy_document" "worker_queue_metrics" {
+  count = var.queue_metrics == null ? 0 : 1
+
+  statement {
+    sid       = "PublishQueueBacklogMetrics"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = [var.queue_metrics.namespace]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "worker_task_queue_metrics" {
+  count = var.queue_metrics == null ? 0 : 1
+
+  name   = "${var.name_prefix}-ecs-worker-task-queue-metrics-policy"
+  role   = aws_iam_role.worker_task.id
+  policy = data.aws_iam_policy_document.worker_queue_metrics[0].json
 }

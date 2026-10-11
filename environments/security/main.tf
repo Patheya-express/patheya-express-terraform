@@ -22,6 +22,12 @@ module "iam" {
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
+
+  # The terraform repository uses GitHub's immutable OIDC subject (repo:<org>@<id>/<repo>@<id>).
+  github_immutable_subject_ids = {
+    organization_id = 288619070
+    repository_ids  = { "patheya-express-terraform" = 1340314316 }
+  }
 }
 
 module "kms" {

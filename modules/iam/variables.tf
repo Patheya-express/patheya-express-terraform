@@ -135,6 +135,8 @@ variable "workload_permissions" {
       ecs_exec                          — boundary only: the four ssmmessages channel actions the
                                           SSM agent in a bounded ECS task needs for ECS Exec.
       load_balancer_service_linked_role — creation of the Elastic Load Balancing service-linked role.
+      inspector                         — inspector2:* and the Amazon Inspector service-linked role
+                                          (account-level ECR scanning activation).
   EOT
   type = object({
     ecs                               = optional(bool, false)
@@ -143,6 +145,7 @@ variable "workload_permissions" {
     wafv2                             = optional(bool, false)
     ecs_exec                          = optional(bool, false)
     load_balancer_service_linked_role = optional(bool, false)
+    inspector                         = optional(bool, false)
   })
   default  = {}
   nullable = false
@@ -188,4 +191,26 @@ variable "static_site_deploy" {
     environment_tag    = string
   })
   default = null
+}
+
+variable "github_immutable_subject_ids" {
+  description = <<-EOT
+    Numeric GitHub IDs for repositories that use GitHub's immutable OIDC subject format
+    (repository setting use_immutable_subject = true), whose tokens carry
+    "repo:<org>@<org_id>/<repo>@<repo_id>:ref:..." instead of "repo:<org>/<repo>:ref:...".
+    null (default) keeps the name-only format. Set, the Terraform CI role trusts only the
+    ID-qualified subject. IDs are public (GET /repos/<org>/<repo> -> owner.id, id).
+  EOT
+  type = object({
+    organization_id = number
+    repository_ids  = map(number)
+  })
+  default = null
+
+  validation {
+    condition = var.github_immutable_subject_ids == null || alltrue([
+      for repo in var.github_repositories : contains(keys(try(var.github_immutable_subject_ids.repository_ids, {})), repo)
+    ])
+    error_message = "github_immutable_subject_ids.repository_ids must contain every repository in github_repositories."
+  }
 }

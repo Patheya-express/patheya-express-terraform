@@ -87,6 +87,69 @@ resource "aws_s3_bucket_policy" "this" {
   policy = data.aws_iam_policy_document.bucket_policy[each.key].json
 }
 
+# One policy for every site: security headers on all responses, including the SPA fallback
+# (custom_error_response) and S3 errors. override = true so an object's own metadata can never
+# weaken them.
+resource "aws_cloudfront_response_headers_policy" "security" {
+  # checkov:skip=CKV_AWS_259:HSTS is enforced (1 year, override) per host; includeSubDomains/preload are deliberately off until every patheyaexpress.com subdomain is confirmed HTTPS-only.
+  name    = "${var.name_prefix}-web-security-headers"
+  comment = "Security headers for the ${var.name_prefix} static web distributions"
+
+  security_headers_config {
+    strict_transport_security {
+      access_control_max_age_sec = var.security_headers.hsts_max_age_seconds
+      include_subdomains         = false
+      preload                    = false
+      override                   = true
+    }
+
+    content_type_options {
+      override = true
+    }
+
+    referrer_policy {
+      referrer_policy = var.security_headers.referrer_policy
+      override        = true
+    }
+
+    frame_options {
+      frame_option = var.security_headers.frame_option
+      override     = true
+    }
+
+    dynamic "content_security_policy" {
+      for_each = var.security_headers.content_security_policy != null && !var.security_headers.csp_report_only ? [1] : []
+      content {
+        content_security_policy = var.security_headers.content_security_policy
+        override                = true
+      }
+    }
+  }
+
+  dynamic "custom_headers_config" {
+    for_each = var.security_headers.permissions_policy != null || (var.security_headers.content_security_policy != null && var.security_headers.csp_report_only) ? [1] : []
+    content {
+      dynamic "items" {
+        for_each = var.security_headers.permissions_policy != null ? [var.security_headers.permissions_policy] : []
+        content {
+          header   = "Permissions-Policy"
+          value    = items.value
+          override = true
+        }
+      }
+
+      dynamic "items" {
+        for_each = var.security_headers.content_security_policy != null && var.security_headers.csp_report_only ? [var.security_headers.content_security_policy] : []
+        content {
+          header   = "Content-Security-Policy-Report-Only"
+          value    = items.value
+          override = true
+        }
+      }
+    }
+  }
+}
+
 resource "aws_cloudfront_distribution" "this" {
   for_each = var.sites
 
@@ -113,6 +176,8 @@ resource "aws_cloudfront_distribution" "this" {
     # Cache-Control headers set at upload time (immutable for hashed assets, no-store for
     # index.html) still take precedence, matching the existing nginx behavior this replaces.
     cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
   }
 
   # SPA fallback — every deep link is a real Angular Router path with nothing server-side to

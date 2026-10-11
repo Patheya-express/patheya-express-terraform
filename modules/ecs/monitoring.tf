@@ -125,3 +125,50 @@ resource "aws_cloudwatch_metric_alarm" "running_tasks_low" {
 
   tags = merge(var.tags, { Application = "ecs", Purpose = "${each.key}-running-tasks-alarm" })
 }
+
+# --- Queue backlog (var.queue_metrics) ------------------------------------------------------------
+
+# The worker stopped publishing (or never started): scaling on this metric is then frozen (no
+# scale-out, no scale-in), so it is surfaced rather than silently tolerated. Missing data is the
+# failure being detected, hence "breaching".
+resource "aws_cloudwatch_metric_alarm" "queue_metrics_stale" {
+  count = var.queue_metrics == null ? 0 : 1
+
+  alarm_name          = "${var.name_prefix}-queue-metrics-stale"
+  alarm_description   = "No BullMQ backlog metrics from the worker for 10 minutes: the publisher is down or failing, and queue-based worker scaling is frozen."
+  namespace           = var.queue_metrics.namespace
+  metric_name         = "BacklogWaiting"
+  dimensions          = { Environment = var.queue_metrics.environment }
+  statistic           = "SampleCount"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = [var.alarm_sns_topic_arn]
+  ok_actions          = [var.alarm_sns_topic_arn]
+
+  tags = merge(var.tags, { Application = "ecs", Purpose = "queue-metrics-stale-alarm" })
+}
+
+# Work is waiting longer than expected even if the backlog is small (e.g. a stuck concurrency-1
+# queue) — a latency signal scaling alone does not cover.
+resource "aws_cloudwatch_metric_alarm" "queue_oldest_waiting" {
+  count = var.queue_metrics == null ? 0 : 1
+
+  alarm_name          = "${var.name_prefix}-queue-oldest-waiting-high"
+  alarm_description   = "The oldest waiting BullMQ job has waited over ${var.queue_metrics.oldest_waiting_alarm_seconds} s for 5 consecutive minutes."
+  namespace           = var.queue_metrics.namespace
+  metric_name         = "OldestWaitingAgeSeconds"
+  dimensions          = { Environment = var.queue_metrics.environment }
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 5
+  threshold           = var.queue_metrics.oldest_waiting_alarm_seconds
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "missing"
+  alarm_actions       = [var.alarm_sns_topic_arn]
+  ok_actions          = [var.alarm_sns_topic_arn]
+
+  tags = merge(var.tags, { Application = "ecs", Purpose = "queue-oldest-waiting-alarm" })
+}

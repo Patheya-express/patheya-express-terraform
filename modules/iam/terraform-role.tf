@@ -27,10 +27,15 @@ data "aws_iam_policy_document" "terraform_role_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
+      # With var.github_immutable_subject_ids set (the repository has GitHub's immutable OIDC
+      # subject enabled), only the ID-qualified subject is trusted: a renamed or re-created
+      # repository with the same name cannot assume the role.
       values = flatten([
         for repo in var.github_repositories : [
           for ref in var.terraform_role_allowed_branches :
-          "repo:${var.github_organization}/${repo}:${ref}"
+          var.github_immutable_subject_ids == null
+          ? "repo:${var.github_organization}/${repo}:${ref}"
+          : "repo:${var.github_organization}@${var.github_immutable_subject_ids.organization_id}/${repo}@${var.github_immutable_subject_ids.repository_ids[repo]}:${ref}"
         ]
       ])
     }

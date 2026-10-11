@@ -382,3 +382,32 @@ variable "migration_database_url_secret_arn" {
   type        = string
   default     = null
 }
+
+variable "queue_metrics" {
+  description = <<-EOT
+    Queue backlog metrics from the worker (BullMQ backlog published to CloudWatch by the
+    api-gateway worker process). null (default) disables publishing. Set, the worker task gets
+    QUEUE_METRICS_ENABLED/QUEUE_METRICS_ENVIRONMENT and cloudwatch:PutMetricData limited to
+    namespace; alarms on stale metrics and old waiting jobs go to alarm_sns_topic_arn.
+      namespace          — must match the application's QUEUE_METRICS_NAMESPACE ("Patheya/Queues").
+      environment        — the Environment dimension value.
+      oldest_waiting_alarm_seconds — alarm when the oldest waiting job is older than this.
+  EOT
+  type = object({
+    namespace                    = string
+    environment                  = string
+    oldest_waiting_alarm_seconds = optional(number, 300)
+  })
+  default = null
+}
+
+variable "worker_queue_backlog_target_per_task" {
+  description = "Target-tracking goal for waiting BullMQ jobs per worker task (metric BacklogPerWorker from queue_metrics). null (default) adds no queue-based policy. Requires queue_metrics."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.worker_queue_backlog_target_per_task == null || try(var.worker_queue_backlog_target_per_task > 0, false)
+    error_message = "worker_queue_backlog_target_per_task must be positive when set."
+  }
+}
