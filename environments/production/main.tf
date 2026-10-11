@@ -59,10 +59,17 @@ module "iam" {
     wafv2                             = true
     ecs_exec                          = true
     load_balancer_service_linked_role = true
+    inspector                         = true
   }
 
   tags        = module.shared.tags
   name_prefix = module.shared.name_prefix
+
+  # The terraform repository uses GitHub's immutable OIDC subject (repo:<org>@<id>/<repo>@<id>).
+  github_immutable_subject_ids = {
+    organization_id = 288619070
+    repository_ids  = { "patheya-express-terraform" = 1340314316 }
+  }
 
   # Manual-approval-gated (platform-standards.md Section 6) — restricting to `main` (the module
   # default) is necessary but not sufficient on its own; the GitHub Actions workflow's own
