@@ -59,6 +59,36 @@ module "static_site" {
   # SSE-S3: build artifacts are public by nature once served; OAC + a private bucket policy are the
   # access control, and SSE-KMS would additionally require a CloudFront grant on the key.
   kms_key_arn = null
+
+  # All four apps load the same third parties (verified 2026-10-11 against the deployed bundles):
+  # the API (HTTPS + Socket.IO), Razorpay Checkout, the Google Maps JS API, Leaflet from unpkg with
+  # OpenStreetMap tiles, Cloudinary media URLs from the API, and cdn.patheya.com (restaurant offers
+  # banner). Angular's critical-CSS loader uses one inline handler, onload="this.media='all'",
+  # allowed by hash only.
+  #
+  # The CSP ships as Report-Only (browser console reports, nothing blocked) until checkout, maps,
+  # media upload and sign-in are exercised in a browser against it; enforcing it is then a
+  # one-line change (csp_report_only = false).
+  security_headers = {
+    hsts_max_age_seconds = 31536000
+    permissions_policy   = "geolocation=(self), camera=(), microphone=(), usb=(), serial=(), bluetooth=(), midi=(), magnetometer=(), gyroscope=(), accelerometer=(), payment=(self \"https://checkout.razorpay.com\" \"https://api.razorpay.com\")"
+    csp_report_only      = true
+    content_security_policy = join("; ", [
+      "default-src 'self'",
+      "script-src 'self' https://checkout.razorpay.com https://maps.googleapis.com https://unpkg.com",
+      "script-src-attr 'unsafe-hashes' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='",
+      "style-src 'self' 'unsafe-inline' https://unpkg.com",
+      "img-src 'self' data: blob: https://res.cloudinary.com https://*.tile.openstreetmap.org https://unpkg.com https://maps.googleapis.com https://*.gstatic.com https://cdn.patheya.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "connect-src 'self' https://api.patheyaexpress.com wss://api.patheyaexpress.com https://*.razorpay.com https://maps.googleapis.com",
+      "frame-src https://api.razorpay.com https://checkout.razorpay.com",
+      "worker-src 'self' blob:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self' https://*.razorpay.com",
+      "frame-ancestors 'none'",
+    ])
+  }
 }
 
 resource "aws_route53_record" "web" {
