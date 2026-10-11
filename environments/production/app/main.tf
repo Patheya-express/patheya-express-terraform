@@ -211,6 +211,18 @@ module "ecs" {
   api_alb_request_count_target          = 1200
   api_alb_resource_label                = "${module.alb.alb_arn_suffix}/${module.alb.api_target_group_arn_suffix}"
 
+  # Worker queue backlog (api-gateway worker publishes Patheya/Queues). One worker task runs 29
+  # concurrent job slots (dispatch 8, notifications 10, orders 8, payments/search/tickets 1 each),
+  # and these jobs complete in milliseconds to seconds, so jobs only wait when slots are full.
+  # 10 waiting jobs per task, sustained for the target-tracking alarm window (3 x 1 min), means the
+  # queues are not draining: add a task. Worker live bounds (1-3) are unchanged, so the cost
+  # ceiling is unchanged; scale-in still needs CPU, memory and backlog policies to agree.
+  queue_metrics = {
+    namespace   = "Patheya/Queues"
+    environment = "production"
+  }
+  worker_queue_backlog_target_per_task = 10
+
   deployment_minimum_healthy_percent    = local.deployment_minimum_healthy_percent
   deployment_maximum_percent            = local.deployment_maximum_percent
   api_health_check_grace_period_seconds = 60
